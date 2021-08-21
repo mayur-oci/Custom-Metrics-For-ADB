@@ -1,5 +1,45 @@
 SET SERVEROUTPUT ON;
 
+create table SHOPPING_ORDER
+(
+    ID                 INTEGER not null auto primary key,
+    CREATED_DATE       TIMESTAMP(6),
+    DETAILS            VARCHAR2(1000),
+    LAST_UPDATED_DATE  TIMESTAMP(6),
+    STATUS             VARCHAR2(30 char),
+    TOTAL_CHARGES      FLOAT,
+    CUSTOMER_ID        NUMBER(19)
+)
+/
+
+DECLARE 
+  arr_status_random_index INTEGER;
+  customer_id_random INTEGER;
+  type STATUS_ARRAY IS VARRAY(5) OF VARCHAR2(30); 
+  status_array STATUS_ARRAY; 
+
+BEGIN
+  status_array := STATUS_ARRAY('ACCEPTED','PAYMENT_REJECTED', 'SHIPPED', 'ABORTED', 
+                               'OUT_FOR_DELIVERY', 'ORDER_DROPPED_NO_INVENTORY', 
+                               'PROCESSED', 'NOT_FULLFILLED');
+  arr_status_random_index := dbms_random.value(1,8);
+  
+  
+  INSERT INTO SHOPPING_ORDER(CREATED_DATE, DETAILS, LAST_UPDATED_DATE, STATUS, TOTAL_CHARGES, CUSTOMER_ID)
+  VALUES()
+
+END;
+/
+
+
+
+
+
+
+
+
+
+
 CREATE PROCEDURE POST_CUSTOM_METRICS_TO_OCI
     IS
     compartment_id             VARCHAR2(100) := 'ocid1.compartment.oc1..aaaaaaaa2z4wup7a4enznwxi3mkk55cperdk3fcotagepjnan5utdb3tvakq' ;
