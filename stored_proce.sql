@@ -13,8 +13,8 @@ CREATE PROCEDURE POST_CUSTOM_METRICS_TO_OCI
     mdd_datapoint              json_object_t;
     resp                       dbms_cloud_types.RESP;
     attempt                    INTEGER       := 0;
-    EXCEPTION_POSTING_METRICS EXCEPTION;
-    SLEEP_IN_SECONDS INTEGER := 5;
+    EXCEPTION_POSTING_METRICS  EXCEPTION;
+    SLEEP_IN_SECONDS           INTEGER := 5;
 
 BEGIN
 
@@ -38,7 +38,7 @@ BEGIN
 
     arr_mdd_datapoint := json_array_t();
     mdd_datapoint := json_object_t();
-    mdd_datapoint.put('timestamp', TO_CHAR(SYSTIMESTAMP AT TIME ZONE 'UTC', 'yyyy-mm-dd"T"hh24:mi:ss.ff3"Z"'));
+    mdd_datapoint.put('timestamp', TO_CHAR(SYSTIMESTAMP AT TIME ZONE 'UTC', 'yyyy-mm-dd"T"hh24:mi:ss.ff3"Z"')); --timestamp value RFC3339 compliant
     mdd_datapoint.put('value', 10);
     mdd_datapoint.put('count', 1);
     arr_mdd_datapoint.append(mdd_datapoint);
