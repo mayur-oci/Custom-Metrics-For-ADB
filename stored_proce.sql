@@ -1,108 +1,96 @@
 SET SERVEROUTPUT ON;
 
-DECLARE
-    compartment_id                  VARCHAR2(100) := 'ocid1.compartment.oc1..aaaaaaaa2z4wup7a4enznwxi3mkk55cperdk3fcotagepjnan5utdb3tvakq' ;
-    region                          VARCHAR2(25)  := 'us-ashburn-1' ;
-    xyz                             VARCHAR2(1000);
-    dd                              date;
-    ts                              TIMESTAMP WITH TIME ZONE;
-    oci_post_metrics_body_json      json_object_t;
-    metric_data_arr                 json_array_t;
-    metric_data_entry               json_object_t;
-    metric_data_entry_metadata      json_object_t;
-    metric_data_entry_dimension     json_object_t;
-    metric_data_entry_data_pt_arr   json_array_t;
-    metric_data_entry_data_pt_entry json_object_t;
-    resp                            dbms_cloud_types.RESP;
-    attempt                         INTEGER := 0;
-    EXCEPTION_POSTING_METRICS       EXCEPTION;
-    SLEEP_IN_SECONDS                INTEGER := 5;
+CREATE PROCEDURE POST_CUSTOM_METRICS_TO_OCI
+    IS
+    compartment_id             VARCHAR2(100) := 'ocid1.compartment.oc1..aaaaaaaa2z4wup7a4enznwxi3mkk55cperdk3fcotagepjnan5utdb3tvakq' ;
+    region                     VARCHAR2(25)  := 'us-ashburn-1' ;
+    oci_post_metrics_body_json json_object_t;
+    arr_metric_data            json_array_t;
+    metric_data_details        json_object_t;
+    mdd_metadata               json_object_t;
+    mdd_dimensions             json_object_t;
+    arr_mdd_datapoint          json_array_t;
+    mdd_datapoint              json_object_t;
+    resp                       dbms_cloud_types.RESP;
+    attempt                    INTEGER       := 0;
+    EXCEPTION_POSTING_METRICS EXCEPTION;
+    SLEEP_IN_SECONDS INTEGER := 5;
 
 BEGIN
-    ts := SYSTIMESTAMP AT TIME ZONE 'UTC';
-    DBMS_OUTPUT.put_line(TO_CHAR(ts));
 
-
-    xyz := TO_CHAR(ts, 'YYYY-MM-DD') || 'T' || TO_CHAR(ts, 'HH24') || ':' || TO_CHAR(ts, 'MM:SS.FF') || 'Z';
-    DBMS_OUTPUT.put_line(xyz);
-
-
-    xyz := TO_CHAR(Sysdate, 'YYYY-MM-DD HH24:MM:SS') || 'Z';
-    DBMS_OUTPUT.put_line(xyz);
-
-    DBMS_OUTPUT.PUT_LINE('Date in RFC 3339' || TO_CHAR(
-            SYSTIMESTAMP AT TIME ZONE 'UTC',
-            'yyyy-mm-dd"T"hh24:mi:ss.ff3"Z"'
-        ));
-
-    metric_data_entry := json_object_t();
-    metric_data_entry.put('namespace', 'testnamespace');
-    metric_data_entry.put('resourceGroup', 'testresourcegroup');
-    metric_data_entry.put('compartmentId', compartment_id);
-    metric_data_entry.put('name', 'testName');
+    -- prepare JSON body for postmetrics api..for details plz see https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData
+    metric_data_details := json_object_t();
+    metric_data_details.put('namespace', 'testnamespace');
+    metric_data_details.put('resourceGroup', 'testresourcegroup');
+    metric_data_details.put('compartmentId', compartment_id);
+    metric_data_details.put('name', 'testName');
     --metric_data_entry.put('batchAtomicity', 'false');
 
-    metric_data_entry_metadata := json_object_t();
-    metric_data_entry_metadata.put('unit', 'rowsupdated');
+    mdd_metadata := json_object_t();
+    mdd_metadata.put('unit', 'rowsupdated');
 
-    metric_data_entry.put('metadata', metric_data_entry_metadata);
+    metric_data_details.put('metadata', mdd_metadata);
 
-    metric_data_entry_dimension := json_object_t();
-    metric_data_entry_dimension.put('dbname', 'testDB');
-    metric_data_entry_dimension.put('schemaname', 'testschema');
-    metric_data_entry.put('dimensions', metric_data_entry_dimension);
+    mdd_dimensions := json_object_t();
+    mdd_dimensions.put('dbname', 'testDB');
+    mdd_dimensions.put('schemaname', 'testschema');
+    metric_data_details.put('dimensions', mdd_dimensions);
 
-    metric_data_entry_data_pt_arr := json_array_t();
-    metric_data_entry_data_pt_entry := json_object_t();
-    metric_data_entry_data_pt_entry.put('timestamp',
-                                        TO_CHAR(SYSTIMESTAMP AT TIME ZONE 'UTC', 'yyyy-mm-dd"T"hh24:mi:ss.ff3"Z"'));
-    metric_data_entry_data_pt_entry.put('value', 10);
-    metric_data_entry_data_pt_entry.put('count', 1);
-    metric_data_entry_data_pt_arr.append(metric_data_entry_data_pt_entry);
+    arr_mdd_datapoint := json_array_t();
+    mdd_datapoint := json_object_t();
+    mdd_datapoint.put('timestamp', TO_CHAR(SYSTIMESTAMP AT TIME ZONE 'UTC', 'yyyy-mm-dd"T"hh24:mi:ss.ff3"Z"'));
+    mdd_datapoint.put('value', 10);
+    mdd_datapoint.put('count', 1);
+    arr_mdd_datapoint.append(mdd_datapoint);
 
-    metric_data_entry.put('datapoints', metric_data_entry_data_pt_arr);
+    metric_data_details.put('datapoints', arr_mdd_datapoint);
 
 
-    metric_data_arr := json_array_t();
-    metric_data_arr.append(metric_data_entry);
+    arr_metric_data := json_array_t();
+    arr_metric_data.append(metric_data_details);
 
     oci_post_metrics_body_json := json_object_t();
-    oci_post_metrics_body_json.put('metricData', metric_data_arr);
+    oci_post_metrics_body_json.put('metricData', arr_metric_data);
 
-    DBMS_OUTPUT.put_line(metric_data_arr.to_string);
+    DBMS_OUTPUT.put_line(arr_metric_data.to_string);
 
-    WHILE (3 < 4) LOOP
+    WHILE (TRUE)
+        LOOP
+            -- invoking REST endpoint for OCI Monitoring API
             resp := dbms_cloud.send_request(
                     credential_name => 'OCI$RESOURCE_PRINCIPAL ',
                     uri => 'https://telemetry-ingestion.' || region || '.oraclecloud.com/20180401/metrics',
                     method => dbms_cloud.METHOD_POST,
-                    body => UTL_RAW.cast_to_raw(oci_post_metrics_body_json.to_string) );
+                    body => UTL_RAW.cast_to_raw(oci_post_metrics_body_json.to_string));
 
             IF DBMS_CLOUD.get_response_status_code(resp) = 429 THEN
                 attempt := attempt + 1;
                 IF attempt <= 3 THEN
-                    DBMS_LOCK.SLEEP (SLEEP_IN_SECONDS * attempt); -- increase sleep time for each retry, caused by throttling
+                    DBMS_LOCK.SLEEP(SLEEP_IN_SECONDS * attempt); -- increase sleep time for each retry, caused by throttling
                     DBMS_OUTPUT.put_line('retrying the postmetrics api call');
                 ELSE
                     DBMS_OUTPUT.put_line('Abandoning postmetrics calls, after 3 retries, caused by throttling');
                     EXIT;
                 END IF;
-                
+
             ELSIF DBMS_CLOUD.get_response_status_code(resp) <> 200 THEN
                 -- Response Body in TEXT format
-                DBMS_OUTPUT.put_line('Body: ' || '------------' || CHR(10) || DBMS_CLOUD.get_response_text(resp) || CHR(10));
+                DBMS_OUTPUT.put_line('Body: ' || '------------' || CHR(10) || DBMS_CLOUD.get_response_text(resp) ||
+                                     CHR(10));
                 -- Response Headers in JSON format
-                DBMS_OUTPUT.put_line('Headers: ' || CHR(10) || '------------' || CHR(10) || DBMS_CLOUD.get_response_headers(resp).to_clob || CHR(10));
+                DBMS_OUTPUT.put_line('Headers: ' || CHR(10) || '------------' || CHR(10) ||
+                                     DBMS_CLOUD.get_response_headers(resp).to_clob || CHR(10));
                 -- Response Status Code
-                DBMS_OUTPUT.put_line('Status Code: ' || CHR(10) || '------------' || CHR(10) || DBMS_CLOUD.get_response_status_code(resp));
+                DBMS_OUTPUT.put_line('Status Code: ' || CHR(10) || '------------' || CHR(10) ||
+                                     DBMS_CLOUD.get_response_status_code(resp));
                 RAISE EXCEPTION_POSTING_METRICS;
-                
-            ELSE -- when it is 200 from OCI Metrics API, all good
-                EXIT;
-                
-            END IF; 
-    END LOOP;
 
+            ELSE -- when it is 200 from OCI Metrics API, all good
+                DBMS_OUTPUT.put_line('Posted metrics successfully to OCI moniotring');
+                EXIT;
+
+            END IF;
+        END LOOP;
 
 
 EXCEPTION
