@@ -25,24 +25,31 @@ PARTITION BY LIST(STATUS)
 
 exit;
 
+SET SERVEROUTPUT ON;
+
+SELECT * FROM SHOPPING_ORDER PARTITION(OUT_FOR_DELIVERY);
+
+SELECT * FROM SHOPPING_ORDER WHERE status='NOT_FULLFILLED';
+
+exit;
 DECLARE 
   arr_status_random_index INTEGER;
   customer_id_random INTEGER;
   type STATUS_ARRAY IS VARRAY(8) OF VARCHAR2(30); 
-  status_array STATUS_ARRAY; 
-BEGIN
-  status_array := STATUS_ARRAY('ACCEPTED','PAYMENT_REJECTED', 'SHIPPED', 'ABORTED', 
+  array STATUS_ARRAY := STATUS_ARRAY('ACCEPTED','PAYMENT_REJECTED', 'SHIPPED', 'ABORTED', 
                                'OUT_FOR_DELIVERY', 'ORDER_DROPPED_NO_INVENTORY', 
                                'PROCESSED', 'NOT_FULLFILLED');
-                                                            
-  FOR counter IN 1..100 LOOP
+BEGIN                                                        
+  FOR counter IN 1..10 LOOP
            arr_status_random_index := ROUND(dbms_random.value(low => 1, high => 8));
-           customer_id_random := ROUND(dbms_random.value(low => 1, high => 80000));
+           customer_id_random := ROUND(dbms_random.value(low => 1, high => 8000));
            INSERT INTO SHOPPING_ORDER(STATUS, CUSTOMER_ID)
-                     VALUES(status_array[arr_status_random_index], customer_id_random);
+                     VALUES(array(arr_status_random_index), customer_id_random);
+           DBMS_LOCK.SLEEP(ROUND(dbms_random.value(low => 1, high => 4)));          
   END LOOP;
 END;
 /
+
 
 
 
