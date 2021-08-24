@@ -23,6 +23,8 @@ PARTITION BY LIST(STATUS)
 
 /
 
+ALTER TABLE SHOPPING_ORDER ENABLE ROW MOVEMENT;
+
 exit;
 
 SET SERVEROUTPUT ON;
@@ -32,6 +34,10 @@ SELECT * FROM SHOPPING_ORDER PARTITION(OUT_FOR_DELIVERY);
 SELECT * FROM SHOPPING_ORDER WHERE status='NOT_FULLFILLED';
 
 exit;
+
+
+----------------------
+
 DECLARE 
   arr_status_random_index INTEGER;
   customer_id_random INTEGER;
@@ -39,16 +45,48 @@ DECLARE
   array STATUS_ARRAY := STATUS_ARRAY('ACCEPTED','PAYMENT_REJECTED', 'SHIPPED', 'ABORTED', 
                                'OUT_FOR_DELIVERY', 'ORDER_DROPPED_NO_INVENTORY', 
                                'PROCESSED', 'NOT_FULLFILLED');
-BEGIN                                                        
-  FOR counter IN 1..10 LOOP
-           arr_status_random_index := ROUND(dbms_random.value(low => 1, high => 8));
-           customer_id_random := ROUND(dbms_random.value(low => 1, high => 8000));
+  total_rows_in_shopping_order INTEGER := 10000;  
+  
+  type rowid_nt is table of rowid;
+  rowids rowid_nt;
+BEGIN     
+  -- insert data
+  FOR counter IN 1..total_rows_in_shopping_order LOOP
+           arr_status_random_index := TRUNC(dbms_random.value(low => 1, high => 9));
+           customer_id_random := TRUNC(dbms_random.value(low => 1, high => 8000));
            INSERT INTO SHOPPING_ORDER(STATUS, CUSTOMER_ID)
                      VALUES(array(arr_status_random_index), customer_id_random);
-           DBMS_LOCK.SLEEP(ROUND(dbms_random.value(low => 1, high => 4)));          
+           COMMIT;          
+           --DBMS_LOCK.SLEEP(1);          
   END LOOP;
+  
+  -- keep on updating the same data
+  FOR counter IN 1..1000 LOOP        
+            
+            --Get the rowids
+            SELECT r bulk collect into rowids
+            FROM (
+                SELECT ROWID r
+                FROM SHOPPING_ORDER sample(5)
+                ORDER BY dbms_random.value
+            )RNDM WHERE rownum < total_rows_in_shopping_order+1;
+            
+            --update the table
+            arr_status_random_index := TRUNC(dbms_random.value(low => 1, high => 9));
+            for i in 1 .. rowids.count LOOP
+                update SHOPPING_ORDER SET STATUS=array(arr_status_random_index)
+                where rowid = rowids(i);
+                COMMIT;          
+            END LOOP;    
+                     
+            DBMS_LOCK.SLEEP(ROUND(dbms_random.value(low => 1, high => 2)));          
+  END LOOP;
+  
 END;
 /
+
+
+-------------
 
 
 
