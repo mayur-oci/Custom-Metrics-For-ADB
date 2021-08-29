@@ -1,29 +1,3 @@
-DECLARE
-schema_nm VARCHAR(40);
-db_name VARCHAR(40);
-json_result VARCHAR2(1000);
-tenant_ocid VARCHAR2(100);
-db_metadata   json_object_t; 
-
-BEGIN
- schema_nm := SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA');
- db_name := SYS_CONTEXT('USERENV','INSTANCE_NAME');
- --dbms_output.put_line(schema_nm);
- --dbms_output.put_line(db_name);
-
- SELECT cloud_identity INTO json_result FROM v$pdbs;
-
- dbms_output.put_line(json_result);
-
- db_metadata := json_object_t.parse (json_result);
-
- dbms_output.put_line(db_metadata.get_string ('REGION'));
- dbms_output.put_line(db_metadata.get_string ('COMPARTMENT_OCID'));
-  dbms_output.put_line(db_metadata.get_string ('DATABASE_NAME'));
-
-END;
-/
-
 CREATE OR REPLACE FUNCTION get_metric_data_details_json_obj(
     in_order_status IN VARCHAR2, 
     in_metric_cmpt_id IN VARCHAR2, 
@@ -36,7 +10,7 @@ IS
     mdd_metadata               json_object_t;
     mdd_dimensions             json_object_t;
     arr_mdd_datapoint          json_array_t;
-    mdd_datapoint              json_object_t;    
+    mdd_datapoint              json_object_t;
 BEGIN
 
     mdd_metadata := json_object_t();
@@ -92,7 +66,6 @@ BEGIN
     arr_metric_data := json_array_t();
 
     FOR indx in 1..array.count LOOP
-      dbms_output.put_line(indx || ': ' || array(indx));
       SELECT COUNT(*) INTO total_orders_by_status_cnt FROM SHOPPING_ORDER SO WHERE SO.STATUS=array(indx);
       
       metric_data_details := get_metric_data_details_json_obj(
@@ -142,7 +115,7 @@ BEGIN
             -- invoking REST endpoint for OCI Monitoring API
             -- for details please refer https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData
             resp := dbms_cloud.send_request(
-                    credential_name => 'OCI$RESOURCE_PRINCIPAL ',
+                    credential_name => 'OCI$RESOURCE_PRINCIPAL',
                     uri => 'https://telemetry-ingestion.' || adb_region || '.oraclecloud.com/20180401/metrics',
                     method => dbms_cloud.METHOD_POST,
                     body => UTL_RAW.cast_to_raw(oci_post_metrics_body_json_obj.to_string));
@@ -177,5 +150,10 @@ EXCEPTION
         dbms_output.put_line('Irrecoverable Error Happened when posting metrics to OCI Monitoring, please see console for errors');
     WHEN others THEN
         dbms_output.put_line('Error!!!, please see console for errors');
+END;
+/
+
+BEGIN
+    POST_METRICS_TO_OCI();
 END;
 /
