@@ -1,4 +1,3 @@
-
 CREATE OR REPLACE PROCEDURE populate_data_feed IS
   arr_status_random_index INTEGER;
   customer_id_random INTEGER;
