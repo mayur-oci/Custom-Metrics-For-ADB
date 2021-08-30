@@ -157,3 +157,18 @@ BEGIN
     POST_METRICS_TO_OCI();
 END;
 /
+
+BEGIN
+  DBMS_SCHEDULER.CREATE_JOB (
+   job_name           =>  'POST_METRICS_TO_OCI',
+   job_type           =>  'STORED_PROCEDURE',
+   job_action         =>  'POST_METRICS_TO_OCI',
+   start_date         =>   SYSTIMESTAMP,
+   repeat_interval    =>  'FREQ=SECONDLY;INTERVAL=10', /* every 10th second */
+   max_runs           =>   200,                        -- in production prefer end_date instead or skip it alltogether
+   auto_drop          =>   FALSE,
+   job_class          =>  'adb_custom_metrics',
+   enabled            =>  TRUE,
+   comments           =>  'job to post db metrics to oci monitoring service, runs every 10th second');
+END;
+/
