@@ -12,7 +12,7 @@ GRANT CREATE TABLE, ALTER ANY INDEX, CREATE PROCEDURE, CREATE JOB, SELECT ANY TA
 EXEC DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL(username => 'ECOMMERCE_USER');
 -- The credential is owned by ADMIN user always. 
 SELECT OWNER, CREDENTIAL_NAME FROM DBA_CREDENTIALS WHERE CREDENTIAL_NAME = 'OCI$RESOURCE_PRINCIPAL' AND OWNER = 'ADMIN';
--- To check if any other user has access privilege, you have to check DBA_TAB_PRIVS view
+-- To check if any other user, here ECOMMERCE_USER has access privilege, you have to check DBA_TAB_PRIVS view
 SELECT * from DBA_TAB_PRIVS WHERE DBA_TAB_PRIVS.GRANTEE='ECOMMERCE_USER';
 
 
