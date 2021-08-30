@@ -204,7 +204,7 @@ CREATE OR REPLACE PROCEDURE post_metrics_to_oci
 
 BEGIN
     -- get the meta-data for this ADB Instance like its OCI compartmentId, region and DBName etc; as JSON in oci_metadata_json_result
-    SELECT cloud_identity INTO oci_metadata_json_result FROM v$pdbs;
+    SELECT CLOUD_IDENTITY INTO OCI_METADATA_JSON_RESULT FROM V$PDBS; 
     dbms_output.put_line(oci_metadata_json_result);
 
     -- convert the JSON string into PLSQL JSON native JSON datatype json_object_t variable named oci_metadata_json_result
@@ -300,3 +300,4 @@ FROM SYS.ALL_SCHEDULER_JOBS
 WHERE OWNER = 'ECOMMERCE_USER'
 ORDER BY OWNER,
          JOB_NAME;
+
