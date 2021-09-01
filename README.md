@@ -1,6 +1,6 @@
 
 
-# Oracle Cloud Custom Metrics with Oracle Autonomous Database
+# Configuring Custom Metrics for Oracle Autonomous Database, by leveraging Oracle Cloud Monitoring service
 ## Introduction
 [Oracle Autonomous Database](https://www.oracle.com/autonomous-database/)(ADB) is revolutionizing how data is managed with the introduction of the world’s first "self-driving" database. ADB is powering critical business applications of enterprises, all over the world, as their primary data source. 
 
