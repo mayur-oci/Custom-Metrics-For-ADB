@@ -27,7 +27,7 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
  7. Basic familiarity with Oracle Cloud Concepts like [Monitoring Service](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Concepts/monitoringoverview.htm), [Dynamic Groups and Resouce Principals](https://docs.oracle.com/en-us/iaas/Content/Identity/Concepts/overview.htm). 
  
  ## Solution at a glance:
-![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/image.png?raw=true)
+![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_1.png?raw=true)
  As shown above we will have simple PL/SQL script deployed in our ADB instance,  which is scheduled run periodically computes, collects & posts the custom metrics Oracle Monitoring Service. 
  
 ## Steps at high level
@@ -38,8 +38,18 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
  5. Schedule and run another PL/SQL scripts to compute, collect & post the custom metrics *Oracle Monitoring Service*. 
 
  ## Detailed Steps:
+ 1. Create Dynamic Group for your ADB instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
+      1. Create Dynamic Group named ***adb_dg*** for your ADB instance(or instances), with the rule say as `ALL {resource.type = 'autonomousdatabase', resource.compartment.id = '<compartment OCID for your ADB instance>'}`.
+     
+           Alternatively you can just choose single ADB instance instead of all the instances in the compartment as 
+            ` ALL {resource.type = 'autonomousdatabase', resource.id = '<OCID for your ADB instance>'}`
+![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_2_dg.png?raw=true)
+      2.  
+      
+
+
  
- 1. Create Dynamic Group named ***adb_dg*** for your ADB instance(or instances) and authorize the same dynamic group, to post metrics to *Oracle Cloud Monitoring Service* with policy named ***adb_dg_policy***.
+     
  
  
 
