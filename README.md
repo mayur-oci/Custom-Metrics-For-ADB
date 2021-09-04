@@ -31,13 +31,15 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
  As shown above we will have simple PL/SQL script deployed in our ADB instance,  which is scheduled run periodically computes, collects & posts the custom metrics Oracle Monitoring Service. 
  
 ## Steps at high level
- 1. Create Dynamic Group named ***adb_dg*** for your ADB instance(or instances) and authorize the same dynamic group, to post metrics to *Oracle Cloud Monitoring Service* with policy named ***adb_dg_policy***.
- 2. Create new DB user/schema named ***ecommerce_user*** in your ADB for this tutorial. Please note, this step optional since you can use any of your existing user/schema for this tutorial. 
- 3. Create example data table ***SHOPPING_ORDER*** to showcase computation of metrics on a database tables. You can create this table in newly created schema in step 2 or in already existing DB schema of your choice. 
- 4. Run dummy PL/SQL scripts with necessery stored procedures to populate data in ***SHOPPING_ORDER*** table. 
- 5. Schedule and run PL/SQL scripts with necessery stored procedures and functions to compute, collect and post metrics to compute, collect & post the custom metrics *Oracle Monitoring Service*. 
+ 1. Create Dynamic Group for your ADB instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
+ 2. Create new DB user/schema in your ADB for this tutorial. Please note, this step optional since you can use any of your existing user/schema for this tutorial. 
+ 3. Create example data table ***SHOPPING_ORDER***.
+ 4. Run example PL/SQL scripts to populate data in ***SHOPPING_ORDER*** table. 
+ 5. Schedule and run another PL/SQL scripts to compute, collect & post the custom metrics *Oracle Monitoring Service*. 
 
  ## Detailed Steps:
-
+ 
+ 1. Create Dynamic Group named ***adb_dg*** for your ADB instance(or instances) and authorize the same dynamic group, to post metrics to *Oracle Cloud Monitoring Service* with policy named ***adb_dg_policy***.
+ 
  
 
