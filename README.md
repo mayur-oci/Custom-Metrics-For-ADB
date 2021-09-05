@@ -75,7 +75,10 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
      This basically connect the dyanmic group ***adb_dg*** we created in step 1 to our DB user ***ECOMMERCE_USER***, giving it the authorization to post metrics to *Oracle Cloud Monitoring Service*. For details, refer [Oracle Cloud Resource Principle For Autonomous Databases](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/resource-principal.html).
    4.  This step is optional and we just verify the operations we did in previous step.
         Please note the Oracle DB credential corresponding to Oracle Cloud Resource Principal once enabled, is always owned by ADMIN user for ADB.  You can verify the same as follows.
+	
         `SELECT OWNER, CREDENTIAL_NAME FROM DBA_CREDENTIALS WHERE CREDENTIAL_NAME =  'OCI$RESOURCE_PRINCIPAL'  AND OWNER =  'ADMIN';`
-        To check if any other user, here ECOMMERCE_USER has access privilege, you have to check *DBA_TAB_PRIVS* view
+	
+        To check if any other user, here ECOMMERCE_USER has access privilege, you have to check *DBA_TAB_PRIVS* view.
+	
         `SELECT * from DBA_TAB_PRIVS WHERE DBA_TAB_PRIVS.GRANTEE='ECOMMERCE_USER';`
   
