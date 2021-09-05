@@ -78,7 +78,7 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
 	
         `SELECT OWNER, CREDENTIAL_NAME FROM DBA_CREDENTIALS WHERE CREDENTIAL_NAME =  'OCI$RESOURCE_PRINCIPAL'  AND OWNER =  'ADMIN';`
 	
-        To check if any other user, here ECOMMERCE_USER has access privilege, you have to check *DBA_TAB_PRIVS* view.
-	
+        To check if any other user, here ECOMMERCE_USER has access DB credential(hence to OCI Resource Principal), you have to check *DBA_TAB_PRIVS* view, as follows.
+
         `SELECT * from DBA_TAB_PRIVS WHERE DBA_TAB_PRIVS.GRANTEE='ECOMMERCE_USER';`
   
