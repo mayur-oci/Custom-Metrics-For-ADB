@@ -25,7 +25,7 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
  5. Basic familiarity with Oracle Cloud Concepts like [Monitoring Service](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Concepts/monitoringoverview.htm), [Dynamic Groups and Resouce Principals](https://docs.oracle.com/en-us/iaas/Content/Identity/Concepts/overview.htm). 
  
 ## Solution at a glance:
-![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_1.png?raw=true)
+![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_1_archi.png?raw=true)
  As shown above we will have simple PL/SQL script deployed in our ADB instance,  which is scheduled run periodically to compute, collect & post the custom metrics Oracle Monitoring Service. Additionally ADB Service instance can be with private or public endpoint. Irrespective of that, the communication between ADB and Oracle Monitoring Service takes place on Oracle Cloud Network which is ultra fast and highly available. No need to setup Service Gateway.
 *In this tutorial we are covering up-till getting the custom metrics from ADB to Oracle Monitoring Service. Please refer Oracle Cloud documentation and blogs to know more about, setting up Alarms, Notifications on Oracle Cloud Metrics is extensively covered*
  
@@ -38,12 +38,19 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
 
  ## Detailed Steps:
  1. Create Dynamic Group for your ADB instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
-      1. Create Dynamic Group named ***adb_dg*** for your ADB instance(or instances), with the rule say as `ALL {resource.type = 'autonomousdatabase', resource.compartment.id = '<compartment OCID for your ADB instance>'}`.
-     
-           Alternatively you can just choose single ADB instance instead of all the instances in the compartment as 
-            ` ALL {resource.type = 'autonomousdatabase', resource.id = '<OCID for your ADB instance>'}`
+      1. Create Dynamic Group named ***adb_dg*** for your ADB instance(or instances), with the rule say as 
+      
+      
+         `ALL {resource.type = 'autonomousdatabase', resource.compartment.id = '<compartment OCID for your ADB instance>'}`
+	
+         Alternatively you can just choose single ADB instance instead of all the instances in the compartment as 
+	 
+	
+         `ALL {resource.type = 'autonomousdatabase', resource.id = '<OCID for your ADB instance>'}`	 
+         
 ![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_2_dg.png?raw=true)
       2.  Create OCI IAM policy to authorize the dynamic group ***adb_dg*** , to post metrics to *Oracle Cloud Monitoring Service* with policy named ***adb_dg_policy***, with policy rules as
+	
       `Allow dynamic-group adb_dg to read metrics in compartment <Your ADB Compartment OCID>`
       Now your ADB Service(covered by definition of your dynamic group adb_dg) is authorized to post metrics in the same compartment!
        But no DB user is yet authorized to do it. Hence effectively PL/SQL running on ADB can not still post any metrics to *Oracle Monitoring Service*! 
@@ -69,19 +76,20 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
 	```       
 	
      3. Enable Oracle DB credential for Oracle Cloud Resource Principal and give its access to db-user ECOMMERCE_USER. 
-                  ```
-             EXEC DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL(username => 'ECOMMERCE_USER');
-          ```
+     
+          `EXEC DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL(username => 'ECOMMERCE_USER');`
+	  
      This basically connect the dyanmic group ***adb_dg*** we created in step 1 to our DB user ***ECOMMERCE_USER***, giving it the authorization to post metrics to *Oracle Cloud Monitoring Service*. For details, refer [Oracle Cloud Resource Principle For Autonomous Databases](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/resource-principal.html).
      
       4.  This step is optional and here we just reverify the operations we did in previous step.
            Please note the Oracle DB credential corresponding to Oracle Cloud Resource Principal once enabled, is always owned by ADMIN user for ADB.  You can verify the same as follows.
+	   
 	
-        ` SELECT OWNER, CREDENTIAL_NAME FROM DBA_CREDENTIALS WHERE CREDENTIAL_NAME =  'OCI$RESOURCE_PRINCIPAL'  AND OWNER =  'ADMIN'; `
+        `SELECT OWNER, CREDENTIAL_NAME FROM DBA_CREDENTIALS WHERE CREDENTIAL_NAME =  'OCI$RESOURCE_PRINCIPAL'  AND OWNER =  'ADMIN';`
 	
        To check if any other user, here ECOMMERCE_USER has access DB credential(hence to OCI Resource Principal), you have to check *DBA_TAB_PRIVS* view, as follows.
 
-        ` SELECT * from DBA_TAB_PRIVS WHERE DBA_TAB_PRIVS.GRANTEE='ECOMMERCE_USER'; `
+        `SELECT * from DBA_TAB_PRIVS WHERE DBA_TAB_PRIVS.GRANTEE='ECOMMERCE_USER';`
 
  3. Create example data table ***SHOPPING_ORDER*** to showcase computation of metrics on a database tables. You can create this table in newly created schema in step 2 or in already existing DB schema of your choice.
 	```
