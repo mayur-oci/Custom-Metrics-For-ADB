@@ -82,3 +82,4 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
 
         ` SELECT * from DBA_TAB_PRIVS WHERE DBA_TAB_PRIVS.GRANTEE='ECOMMERCE_USER'; `
   
+ 
