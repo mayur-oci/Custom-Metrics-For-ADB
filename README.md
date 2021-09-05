@@ -20,9 +20,11 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
 ### Software Tools
 1. Basic PL/SQL familiarity.
 2. OCI Console familiarity.
-3. If you are going to use SQL Developer or Other desktop clients, then you also need to know about [how to connect to ADB using Wallet](https://docs.oracle.com/en/cloud/paas/autonomous-data-warehouse-cloud/cswgs/autonomous-connect-sql-developer.html#GUID-14217939-3E8F-4782-BFF2-021199A908FD).  To make things easier, In the tutorial we are going to use, [SQL Developer Web](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/sql-developer-web.html#GUID-C32A78E5-4C5F-476F-86AB-AEEEA9CF2704), available right from OCI Console page for ATP.
-4. ADMIN user access to your ADB/ATP instance, incase you want to run the scripts of the tutorial, in new different DB schema other than the ADMIN. If you already have dedicated seperate schema, this requirenment can be skipped.
-5. Basic familiarity with Oracle Cloud Concepts like [Monitoring Service](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Concepts/monitoringoverview.htm), [Dynamic Groups and Resouce Principals](https://docs.oracle.com/en-us/iaas/Content/Identity/Concepts/overview.htm).
+3. If you are going to use SQL Developer or Other desktop clients, then you also need to know about [how to connect to ADB using Wallet](https://docs.oracle.com/en/cloud/paas/autonomous-data-warehouse-cloud/cswgs/autonomous-connect-sql-developer.html#GUID-14217939-3E8F-4782-BFF2-021199A908FD).  
+   To make things easier, In the tutorial we are going to use, [SQL Developer Web](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/sql-developer-web.html#GUID-C32A78E5-4C5F-476F-86AB-AEEEA9CF2704), available right from OCI Console page for ATP.
+4. ADMIN user access to your ADB/ATP instance.
+5. Basic familiarity with Oracle Cloud Concepts like [Monitoring Service](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Concepts/monitoringoverview.htm), [PostMetrics api for publishing custom metrics](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData) 
+   & [Dynamic Groups and Resouce Principals](https://docs.oracle.com/en-us/iaas/Content/Identity/Concepts/overview.htm).
 
 ## Solution at a glance:
 ![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_1_archi.png?raw=true)
@@ -371,9 +373,13 @@ Script will run approximately for 20 minutes on ATP with 1 OCPU with 1TB storage
     /
        
    ```
-   The stored procedure `post_metrics_to_oci` is the piece of code which first computes the metric value and then actually invokes the [Oracle Cloud Monitoring Service REST API to post/publish custom metrics](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails).
+   We will analyse the above script in topdown fashion, going from publishing the computed custom metrics then to their actual computation.
+   The stored procedure `post_metrics_to_oci` is the piece of code which first computes the metric value and 
+   then actually invokes the [PostMetricsData API](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData), to publish these custom metrics Oracle Cloud Monitoring Service.
    
-   As with every Oracle Cloud API, you need proper IAM authorization to invoke it. We pass the same as follows, with the named parameter `credential_name => 'OCI$RESOURCE_PRINCIPAL'`.
+   As with every Oracle Cloud API, you need proper IAM authorization to invoke it. We pass the same as follows, with the named parameter `credential_name => 'OCI$RESOURCE_PRINCIPAL'`. 
+   The DB credential `OCI$RESOURCE_PRINCIPAL` is linked to dynamic group `adb_dg` we created earlier in step 2 and user `ECOMMERCE_USER` already has access to the same, from step 3. 
+   Hence by *chain of trust*, this PL/SQL script executed by `ECOMMERCE_USER` has authorization to post the custom metrics to Oracle Monitoring Service. 
    ```plsql
             resp := dbms_cloud.send_request(
                     credential_name => 'OCI$RESOURCE_PRINCIPAL',
@@ -381,5 +387,13 @@ Script will run approximately for 20 minutes on ATP with 1 OCPU with 1TB storage
                     method => dbms_cloud.METHOD_POST,
                     body => UTL_RAW.cast_to_raw(oci_post_metrics_body_json_obj.to_string));   
    ```
-   `dbms_cloud.send_request` is an inbuilt PL/SQL stored procedure invoke any rest endpoint. Here we are using to invoke Oracle Cloud Monitoring Service REST API.
+   `dbms_cloud.send_request` is an inbuilt PL/SQL stored procedure invoke any rest endpoint, preinstalled with every ADB. Here we are using it to invoke Oracle Cloud Monitoring Service REST API.
+   [PostMetricsData API](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData) expects JSON body of the type [PostMetricDataDetails](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails). 
+   We create this JSON with variable `oci_post_metrics_body_json_obj` of PL/SQL inbuilt datatype `json_object_t`. This enables us to easily create complex JSONs with strong safety PL/SQL type system.
+
+   We need to know region of this ADB instance to determine Oracle Monitoring Service endpoint for this region. We fetch this meta-data from view `V$PDBS` along with other information like compartmentId and DBName for this ADB. 
+   This information acts as dimensions and metadata information for our custom metrics, helping us to correlate these custom metrics with our ADB Instance Service. 
+  
+   
+   
 
