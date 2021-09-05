@@ -34,7 +34,7 @@ CREATE OR REPLACE PROCEDURE populate_data_feed IS
   array STATUS_ARRAY := STATUS_ARRAY('ACCEPTED','PAYMENT_REJECTED', 'SHIPPED', 'ABORTED', 
                                'OUT_FOR_DELIVERY', 'ORDER_DROPPED_NO_INVENTORY', 
                                'PROCESSED', 'NOT_FULLFILLED');
-  total_rows_in_shopping_order INTEGER := 10000;  
+  total_rows_in_shopping_order INTEGER := 1000;  
   
   type rowid_nt is table of rowid;
   rowids rowid_nt;
@@ -55,7 +55,7 @@ BEGIN
   dbms_output.put_line('Done with initial data load');
 
   -- keep on updating the same data
-  FOR counter IN 1..10000 LOOP        
+  FOR counter IN 1..1000 LOOP        
             
             --Get the rowids
             SELECT r bulk collect into rowids
@@ -84,19 +84,19 @@ END;
 
 
 BEGIN
-    DBMS_SCHEDULER.CREATE_JOB 
-    (  
+    -- DBMS_SCHEDULER.STOP_JOB(job_name => 'POPULATE_DATA_FEED');
+    -- DBMS_SCHEDULER.DROP_JOB(job_name => 'POPULATE_DATA_FEED');
+    DBMS_SCHEDULER.CREATE_JOB(  
       JOB_NAME      =>  'POPULATE_DATA_FEED',  
       JOB_TYPE      =>  'STORED_PROCEDURE',  
       JOB_ACTION    =>  'POPULATE_DATA_FEED',  
       ENABLED       =>  TRUE,  
       AUTO_DROP     =>  TRUE,  
       COMMENTS      =>  'ONE-TIME JOB');
-  END;
+END;
 /
 
--- just for our information
-SELECT STATUS,count(*) FROM SHOPPING_ORDER GROUP BY STATUS;
+SELECT * FROM SYS.DBA_JOBS_RUNNING;
 
 
 -----------------------------------------------------------------
@@ -122,8 +122,8 @@ BEGIN
     mdd_dimensions := json_object_t();
     mdd_dimensions.put('dbname', in_adb_name);
     mdd_dimensions.put('schema_name', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'));
-    mdd_dimensions.put('table_name', 'SHOPPING_ORDER');
-    mdd_dimensions.put('order_status', in_order_status);
+    mdd_dimensions.put('table_name', 'SHOPPING_ORDER_TEST');
+    mdd_dimensions.put('status_enum', in_order_status);
 
     mdd_datapoint := json_object_t();
     mdd_datapoint.put('timestamp', in_ts_metric_collection); --timestamp value RFC3339 compliant
@@ -139,7 +139,7 @@ BEGIN
     metric_data_details.put('dimensions', mdd_dimensions);
 
     -- namespace, resourceGroup and name for the custom metric are arbitrary values, as per choice of developer
-    metric_data_details.put('namespace', 'adb_custom_metrics_ns');
+    metric_data_details.put('namespace', 'atp_custom_metrics_ns_10');
     metric_data_details.put('resourceGroup', 'adb_eco_group');
     metric_data_details.put('name', 'order_status');
     metric_data_details.put('compartmentId', in_metric_cmpt_id);
@@ -168,12 +168,15 @@ BEGIN
     -- for details please refer https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails
     arr_metric_data := json_array_t();
 
+    LOCK TABLE SHOPPING_ORDER IN EXCLUSIVE MODE; 
+
     FOR indx in 1..array.count LOOP
       SELECT COUNT(*) INTO total_orders_by_status_cnt FROM SHOPPING_ORDER SO WHERE SO.STATUS=array(indx);
       
       metric_data_details := get_metric_data_details_json_obj(
                                 array(indx),
-                                'ocid1.compartment.oc1..aaaaaaaa2z4wup7a4enznwxi3mkk55cperdk3fcotagepjnan5utdb3tvakq', --oci_metadata_json_obj.get_string('COMPARTMENT_OCID'),
+                                -- 'ocid1.compartment.oc1..aaaaaaaa2z4wup7a4enznwxi3mkk55cperdk3fcotagepjnan5utdb3tvakq',
+                                oci_metadata_json_obj.get_string('COMPARTMENT_OCID'),
                                 oci_metadata_json_obj.get_string('DATABASE_NAME'),
                                 total_orders_by_status_cnt,
                                 TO_CHAR(SYSTIMESTAMP AT TIME ZONE 'UTC', 'yyyy-mm-dd"T"hh24:mi:ss.ff3"Z"')
@@ -183,7 +186,10 @@ BEGIN
 
     END LOOP;
 
-    -- DBMS_OUTPUT.put_line(arr_metric_data.to_string);
+    ROLLBACK; -- to  unlock SHOPPING_ORDER 
+
+    --DBMS_OUTPUT.put_line(json_serialize((arr_metric_data.to_string)  varchar2(4000) pretty));
+    DBMS_OUTPUT.put_line(arr_metric_data.to_string);
     oci_post_metrics_body_json_obj := json_object_t();
     oci_post_metrics_body_json_obj.put('metricData', arr_metric_data);
 
@@ -258,13 +264,14 @@ END;
 
 
 BEGIN
+  --DBMS_SCHEDULER.DROP_JOB(job_name => 'POST_METRICS_JOB');
   DBMS_SCHEDULER.CREATE_JOB (
-   job_name           =>  'POST_METRICS200',
+   job_name           =>  'POST_METRICS_JOB',
    job_type           =>  'STORED_PROCEDURE',
    job_action         =>  'POST_METRICS_TO_OCI',
    start_date         =>   SYSTIMESTAMP,
-   repeat_interval    =>  'FREQ=SECONDLY;INTERVAL=10', /* every 10th second */
-   end_date           =>   SYSTIMESTAMP + INTERVAL '1500' SECOND,  /* in production prefer end_date instead or skip it alltogether */
+   repeat_interval    =>  'FREQ=SECONDLY;INTERVAL=120', /* every 10th second */
+   end_date           =>   SYSTIMESTAMP + INTERVAL '1200' SECOND,  /* in production prefer end_date instead or skip it alltogether */
    auto_drop          =>   TRUE,
    enabled            =>   TRUE,
    comments           =>  'job to post db metrics to oci monitoring service, runs every 10th second');
@@ -280,7 +287,7 @@ SELECT * FROM ALL_SCHEDULER_JOB_RUN_DETAILS
 WHERE OWNER='ECOMMERCE_USER' AND JOB_NAME LIKE2 'POPULATE%' AND rownum < 2 ORDER BY LOG_DATE DESC;
 
 SELECT * FROM ALL_SCHEDULER_JOB_RUN_DETAILS 
-WHERE OWNER='ECOMMERCE_USER' AND JOB_NAME LIKE2 'POST_METRICS200%' ORDER BY LOG_DATE DESC;
+WHERE OWNER='ECOMMERCE_USER' AND JOB_NAME LIKE2 'POST_METRICS%' ORDER BY LOG_DATE DESC;
 
 SELECT OWNER AS SCHEMA_NAME,
        JOB_NAME,
@@ -304,13 +311,19 @@ ORDER BY OWNER,
          JOB_NAME;
 
 
-    SELECT CLOUD_IDENTITY  FROM V$PDBS; 
+--SELECT CLOUD_IDENTITY  FROM V$PDBS; 
+
+-- just for our information
+SELECT STATUS,count(*) FROM SHOPPING_ORDER GROUP BY STATUS;
+SELECT count(*) FROM SHOPPING_ORDER;
 
 
 
+BEGIN
+      DBMS_SCHEDULER.DROP_JOB(job_name => 'POST_METRICS_JOB');
+       --DBMS_SCHEDULER.STOP_JOB(job_name => 'POPULATE_DATA_FEED');
 
+    --DBMS_SCHEDULER.DROP_JOB(job_name => 'POPULATE_DATA_FEED', force => true);
+END;
 
-
-
-
-
+SELECT * FROM SYS.DBA_JOBS_RUNNING;
