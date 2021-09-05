@@ -55,7 +55,7 @@ As shown above we will have simple PL/SQL script deployed in our ADB instance,  
 ![width="80%"](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_3_policy.png?raw=true)
 
 Now your ADB Service(covered by definition of your dynamic group adb_dg) is authorized to post metrics in the same compartment!
-But no DB user is yet authorized to do it. Hence, effectively PL/SQL running on ADB can not still post any metrics to *Oracle Monitoring Service*!. We will fix that in the steps specifically 3.iii!
+But no DB user is yet authorized to do it. Hence, effectively PL/SQL running on ADB can not still post any metrics to *Oracle Monitoring Service*. We will fix that in the steps, specifically 3.iii.
 
 3. Create new DB user/schema with requisite privilges in your ADB or update existing DB user/schema with requisite privilges.
 
@@ -93,6 +93,9 @@ But no DB user is yet authorized to do it. Hence, effectively PL/SQL running on 
    ```
    
 4. Create example data table ***SHOPPING_ORDER*** to showcase computation of metrics on a database tables. You can create this table in newly created schema in step 2 or in already existing DB schema of your choice.
+   The table schema is self-explanatory but please note status column. Each shopping order can have any of 8 status values during its lifetime namely: ACCEPTED','PAYMENT_REJECTED', 'SHIPPED', 'ABORTED',
+   'OUT_FOR_DELIVERY', 'ORDER_DROPPED_NO_INVENTORY', 'PROCESSED', 'NOT_FULLFILLED'. 
+
    ```plsql
    CREATE TABLE SHOPPING_ORDER
    (
@@ -119,6 +122,79 @@ But no DB user is yet authorized to do it. Hence, effectively PL/SQL running on 
    ALTER TABLE SHOPPING_ORDER ENABLE ROW MOVEMENT;
    /
    ```
-5. Run the following PL/SQL scripts with necessery stored procedures to populate data in ***SHOPPING_ORDER*** table. 
+5. Run the following PL/SQL scripts with the necessary stored procedures to populate data in ***SHOPPING_ORDER*** table. The script will keep on first adding 10000 rows into ***SHOPPING_ORDER*** table with random data and then it will update the same data.
+Script will run approximately for 20 minutes on ATP with 1 OCPU with 1TB storage.   
+   ```plsql
+    CREATE OR REPLACE PROCEDURE populate_data_feed IS
+    arr_status_random_index INTEGER;
+    customer_id_random INTEGER;
+    type STATUS_ARRAY IS VARRAY(8) OF VARCHAR2(30);
+    array STATUS_ARRAY := STATUS_ARRAY('ACCEPTED','PAYMENT_REJECTED', 'SHIPPED', 'ABORTED',
+    'OUT_FOR_DELIVERY', 'ORDER_DROPPED_NO_INVENTORY',
+    'PROCESSED', 'NOT_FULLFILLED');
+    total_rows_in_shopping_order INTEGER := 10000;
+    
+    type rowid_nt is table of rowid;
+    rowids rowid_nt;
+    BEGIN     
+    -- starting from scratch just be idempotent and have predictable execution time for this stored procedure
+    -- deleting existing rows is optional
+    DELETE SHOPPING_ORDER;
+    
+    -- insert data
+    FOR counter IN 1..total_rows_in_shopping_order LOOP
+    arr_status_random_index := TRUNC(dbms_random.value(low => 1, high => 9));
+    customer_id_random := TRUNC(dbms_random.value(low => 1, high => 8000));
+    INSERT INTO SHOPPING_ORDER(STATUS, CUSTOMER_ID)
+    VALUES(array(arr_status_random_index), customer_id_random);
+    COMMIT;          
+    --DBMS_LOCK.SLEEP(1);          
+    END LOOP;
+    dbms_output.put_line('Done with initial data load');
+    
+    -- keep on updating the same data
+    FOR counter IN 1..10000 LOOP
+    
+                --Get the rowids
+                SELECT r bulk collect into rowids
+                FROM (
+                    SELECT ROWID r
+                    FROM SHOPPING_ORDER sample(5)
+                    ORDER BY dbms_random.value
+                )RNDM WHERE rownum < total_rows_in_shopping_order+1;
+                
+                --update the table
+                arr_status_random_index := TRUNC(dbms_random.value(low => 1, high => 9));
+                for i in 1 .. rowids.count LOOP
+                    update SHOPPING_ORDER SET STATUS=array(arr_status_random_index)
+                    where rowid = rowids(i);
+                    COMMIT;          
+                END LOOP;    
+                --sleep in-between if you want to run script for longer duration
+                --DBMS_LOCK.SLEEP(ROUND(dbms_random.value(low => 1, high => 2)));          
+    END LOOP;
+    dbms_output.put_line('Done with data feed');
+    
+    EXECUTE IMMEDIATE 'ANALYZE TABLE SHOPPING_ORDER COMPUTE STATISTICS';
+    
+    END;
+    /
+    
+    -- we schedule the data feed since we want it to run right now but asychronously
+    BEGIN
+    DBMS_SCHEDULER.CREATE_JOB
+    (  
+    JOB_NAME      =>  'POPULATE_DATA_FEED',  
+    JOB_TYPE      =>  'STORED_PROCEDURE',  
+    JOB_ACTION    =>  'POPULATE_DATA_FEED',  
+    ENABLED       =>  TRUE,  
+    AUTO_DROP     =>  TRUE,  
+    COMMENTS      =>  'ONE-TIME JOB');
+    END;
+    /
+    
+    -- just for our information
+    SELECT STATUS,count(*) FROM SHOPPING_ORDER GROUP BY STATUS;   
+   ```
 
-  
+6. Now let us  
