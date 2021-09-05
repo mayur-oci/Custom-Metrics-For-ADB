@@ -44,7 +44,12 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
            Alternatively you can just choose single ADB instance instead of all the instances in the compartment as 
             ` ALL {resource.type = 'autonomousdatabase', resource.id = '<OCID for your ADB instance>'}`
 ![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_2_dg.png?raw=true)
-      2.  
+      2.  Create OCI IAM policy to authorize the dynamic group ***adb_dg*** , to post metrics to *Oracle Cloud Monitoring Service* with policy named ***adb_dg_policy***, with policy rules as
+      `Allow dynamic-group adb_dg to read metrics in compartment <Your ADB Compartment OCID>`
+      Now your ADB Service(covered by definition of your dynamic group adb_dg) is authorized to post metrics in the same compartment! We just need to attach this authorization to a perticular ADB user which we will do in next step.
+ [enter link description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_3_policy.png?raw=true)
+      
+      
       
 
 
