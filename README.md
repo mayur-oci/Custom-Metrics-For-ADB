@@ -44,16 +44,18 @@ As shown above we will have simple PL/SQL script deployed in our ADB instance,  
 
        Alternatively you can just choose single ADB instance instead of all the instances in the compartment as
 
-         `ALL {resource.type = 'autonomousdatabase', resource.id = '<OCID for your ADB instance>'}`	 
+        `ALL {resource.type = 'autonomousdatabase', resource.id = '<OCID for your ADB instance>'}`	 
 
 ![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_2_dg.png?raw=true)
 2. Create OCI IAM policy to authorize the dynamic group ***adb_dg*** , to post metrics to *Oracle Cloud Monitoring Service* with policy named ***adb_dg_policy***, with policy rules as
+```plsql
+   Allow dynamic-group adb_dg to read metrics in compartment <Your ADB Compartment OCID>
+```
 
-      `Allow dynamic-group adb_dg to read metrics in compartment <Your ADB Compartment OCID>`
-      
-    Now your ADB Service(covered by definition of your dynamic group adb_dg) is authorized to post metrics in the same compartment!
-       But no DB user is yet authorized to do it. Hence effectively PL/SQL running on ADB can not still post any metrics to *Oracle Monitoring Service*! 
 ![width="80%"](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_3_policy.png?raw=true)
+
+Now your ADB Service(covered by definition of your dynamic group adb_dg) is authorized to post metrics in the same compartment!
+But no DB user is yet authorized to do it. Hence, effectively PL/SQL running on ADB can not still post any metrics to *Oracle Monitoring Service*!. We will fix that in the steps specifically 3.iii!
 
 3. Create new DB user/schema with requisite privilges in your ADB or update existing DB user/schema with requisite privilges.
 
@@ -77,7 +79,7 @@ As shown above we will have simple PL/SQL script deployed in our ADB instance,  
     3. Enable Oracle DB credential for Oracle Cloud Resource Principal and give its access to db-user ECOMMERCE_USER. This basically connect the dyanmic group ***adb_dg*** we created in step 1 to our DB user ***ECOMMERCE_USER***, giving it the authorization to post metrics to *Oracle Cloud Monitoring Service*. For details, refer [Oracle Cloud Resource Principle For Autonomous Databases](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/resource-principal.html).
 
     ```plsql
-        EXEC DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL(username => 'ECOMMERCE_USER');
+     EXEC DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL(username => 'ECOMMERCE_USER');
      ```
  
      4.  This step is optional and here we just reverify the operations we did in previous step.
