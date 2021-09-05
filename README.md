@@ -57,17 +57,19 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
 	   CREATE USER ECOMMERCE_USER IDENTIFIED BY "Password of your choice for this User";
 	```
 	Now onwards we will refer to the user as simply ***ecommerce_user*** , as remaining the steps remain the same, whether it is existing user or newly created one.
+	
     2. Grant requisite Oracle Database related privileges to the ***ecommerce_user***.
-   	    ```
+   	```
 	   GRANT CREATE TABLE, ALTER ANY INDEX, CREATE PROCEDURE, CREATE JOB, SELECT ANY TABLE,
-           EXECUTE ANY PROCEDURE, UPDATE ANY TABLE, CREATE SESSION,UNLIMITED TABLESPACE, CONNECT, RESOURCE TO ECOMMERCE_USER;
-        GRANT SELECT ON "SYS"."V_$PDBS" TO ECOMMERCE_USER;
-        GRANT EXECUTE ON "C##CLOUD$SERVICE"."DBMS_CLOUD" to ECOMMERCE_USER;
-        GRANT EXECUTE on "SYS"."DBMS_LOCK" to ECOMMERCE_USER ;   
-	```                 
+                 EXECUTE ANY PROCEDURE, UPDATE ANY TABLE, CREATE SESSION,UNLIMITED TABLESPACE, CONNECT, RESOURCE TO ECOMMERCE_USER;
+           GRANT SELECT ON "SYS"."V_$PDBS" TO ECOMMERCE_USER;
+           GRANT EXECUTE ON "C##CLOUD$SERVICE"."DBMS_CLOUD" to ECOMMERCE_USER;
+           GRANT EXECUTE on "SYS"."DBMS_LOCK" to ECOMMERCE_USER ;   
+	```       
+	
      3. Enable Resource Principal to Access Oracle Cloud Infrastructure Resources for db-user ECOMMERCE_USER.
-    ```
-
-        ```
+          ```
+             EXEC DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL(username => 'ECOMMERCE_USER');
+          ```
      For details, refer [Oracle Cloud Resource Principle For Autonomous Databases](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/resource-principal.html).
     
