@@ -28,17 +28,17 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
  
  ## Solution at a glance:
 ![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_1.png?raw=true)
- As shown above we will have simple PL/SQL script deployed in our ADB instance,  which is scheduled run periodically computes, collects & posts the custom metrics Oracle Monitoring Service. 
+ As shown above we will have simple PL/SQL script deployed in our ADB instance,  which is scheduled run periodically to compute, collect & post the custom metrics Oracle Monitoring Service. 
  
-## Steps at high level
+## Overview of Steps
  1. Create Dynamic Group for your ADB instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
- 2. Create new DB user/schema in your ADB for this tutorial. Please note, this step optional since you can use any of your existing user/schema for this tutorial. 
- 3. Create example data table ***SHOPPING_ORDER***.
- 4. Run example PL/SQL scripts to populate data in ***SHOPPING_ORDER*** table. 
- 5. Schedule and run another PL/SQL scripts to compute, collect & post the custom metrics *Oracle Monitoring Service*. 
+ 2. Create new DB user/schema with requisite privilges in your ADB or update existing DB user/schema with requisite privilges.
+ 4. Create example data table ***SHOPPING_ORDER***.
+ 5. Run example PL/SQL scripts to populate data in ***SHOPPING_ORDER*** table. 
+ 6. Schedule and run another PL/SQL scripts to compute, collect & post the custom metrics *Oracle Monitoring Service*. 
 
  ## Detailed Steps:
- 1. Create Dynamic Group for your ADB instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
+ 7. Create Dynamic Group for your ADB instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
       1. Create Dynamic Group named ***adb_dg*** for your ADB instance(or instances), with the rule say as `ALL {resource.type = 'autonomousdatabase', resource.compartment.id = '<compartment OCID for your ADB instance>'}`.
      
            Alternatively you can just choose single ADB instance instead of all the instances in the compartment as 
@@ -50,12 +50,24 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
        But no DB user is yet authorized to do it. Hence effectively PL/SQL running on ADB can not still post any metrics to *Oracle Monitoring Service*! 
  ![width="80%"](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_3_policy.png?raw=true)
       
+ 2. Create new DB user/schema with requisite privilges in your ADB or update existing DB user/schema with requisite privilges.
       
-      
+      1. Create new DB user/schema named ***ecommerce_user*** in your ADB. You can create this user as ADMIN user is created for every ADB instance. You can skip this step, if you choose to use existing user.
+	```
+	   CREATE USER ECOMMERCE_USER IDENTIFIED BY "Password of your choice for this User";
+	```
+	Now onwards we will refer to the user as simply ***ecommerce_user*** , as remaining the steps remain the same, whether it is existing user or newly created one.
+    2. Grant requisite Oracle Database related privileges to the ***ecommerce_user***.
+   	    ```
+	   GRANT CREATE TABLE, ALTER ANY INDEX, CREATE PROCEDURE, CREATE JOB, SELECT ANY TABLE,
+           EXECUTE ANY PROCEDURE, UPDATE ANY TABLE, CREATE SESSION,UNLIMITED TABLESPACE, CONNECT, RESOURCE TO ECOMMERCE_USER;
+        GRANT SELECT ON "SYS"."V_$PDBS" TO ECOMMERCE_USER;
+        GRANT EXECUTE ON "C##CLOUD$SERVICE"."DBMS_CLOUD" to ECOMMERCE_USER;
+        GRANT EXECUTE on "SYS"."DBMS_LOCK" to ECOMMERCE_USER ;   
+	```                 
+     3. Enable Resource Principal to Access Oracle Cloud Infrastructure Resources for db-user ECOMMERCE_USER.
+    ```
 
-
- 
-     
- 
- 
-
+        ```
+     For details, refer [Oracle Cloud Resource Principle For Autonomous Databases](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/resource-principal.html).
+    
