@@ -1,5 +1,6 @@
 
 
+
 # Configuring Custom Metrics for Oracle Autonomous Database, by leveraging Oracle Cloud Monitoring Service
 ## Introduction
 [Oracle Autonomous Database](https://www.oracle.com/autonomous-database/)(ADB) is revolutionizing how data is managed with the introduction of the world’s first "self-driving" database. ADB is powering critical business applications of enterprises, all over the world, as their primary data source. 
@@ -56,9 +57,9 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
 	```
 	   CREATE USER ECOMMERCE_USER IDENTIFIED BY "Password of your choice for this User";
 	```
-	Now onwards we will refer to the user as simply ***ecommerce_user*** , as remaining the steps remain the same, whether it is existing user or newly created one.
+	Now onwards we will refer to the user as simply ***ECOMMERCE_USER*** , as remaining the steps remain the same, whether it is existing user or newly created one.
 	
-    2. Grant requisite Oracle Database related privileges to the ***ecommerce_user***.
+    2. Grant requisite Oracle Database related privileges to the ***ECOMMERCE_USER***.
    	```
 	   GRANT CREATE TABLE, ALTER ANY INDEX, CREATE PROCEDURE, CREATE JOB, SELECT ANY TABLE,
                  EXECUTE ANY PROCEDURE, UPDATE ANY TABLE, CREATE SESSION,UNLIMITED TABLESPACE, CONNECT, RESOURCE TO ECOMMERCE_USER;
@@ -67,9 +68,14 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
            GRANT EXECUTE on "SYS"."DBMS_LOCK" to ECOMMERCE_USER ;   
 	```       
 	
-     3. Enable Resource Principal to Access Oracle Cloud Infrastructure Resources for db-user ECOMMERCE_USER.
+     3. Enable Oracle DB credential for Oracle Cloud Resource Principal and give its access to db-user ECOMMERCE_USER. 
           ```
              EXEC DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL(username => 'ECOMMERCE_USER');
           ```
-     For details, refer [Oracle Cloud Resource Principle For Autonomous Databases](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/resource-principal.html).
-    
+     This basically connect the dyanmic group ***adb_dg*** we created in step 1 to our DB user ***ECOMMERCE_USER***, giving it the authorization to post metrics to *Oracle Cloud Monitoring Service*. For details, refer [Oracle Cloud Resource Principle For Autonomous Databases](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/resource-principal.html).
+   4.  This step is optional and we just verify the operations we did in previous step.
+        Please note the Oracle DB credential corresponding to Oracle Cloud Resource Principal once enabled, is always owned by ADMIN user for ADB.  You can verify the same as follows.
+        `SELECT OWNER, CREDENTIAL_NAME FROM DBA_CREDENTIALS WHERE CREDENTIAL_NAME =  'OCI$RESOURCE_PRINCIPAL'  AND OWNER =  'ADMIN';`
+        To check if any other user, here ECOMMERCE_USER has access privilege, you have to check *DBA_TAB_PRIVS* view
+        `SELECT * from DBA_TAB_PRIVS WHERE DBA_TAB_PRIVS.GRANTEE='ECOMMERCE_USER';`
+  
