@@ -34,14 +34,14 @@ CREATE OR REPLACE PROCEDURE populate_data_feed IS
   array STATUS_ARRAY := STATUS_ARRAY('ACCEPTED','PAYMENT_REJECTED', 'SHIPPED', 'ABORTED', 
                                'OUT_FOR_DELIVERY', 'ORDER_DROPPED_NO_INVENTORY', 
                                'PROCESSED', 'NOT_FULLFILLED');
-  total_rows_in_shopping_order INTEGER := 1000;  
+  total_rows_in_shopping_order INTEGER := 10000;  
   
   type rowid_nt is table of rowid;
   rowids rowid_nt;
 BEGIN     
-   -- starting from scratch just be idempotent and have predictable execution time for this stored procedure
-   -- deleting existing rows is optional 
-   DELETE SHOPPING_ORDER;
+  -- starting from scratch just be idempotent and have predictable execution time for this stored procedure
+  -- deleting existing rows is optional 
+  DELETE SHOPPING_ORDER;
    
   -- insert data
   FOR counter IN 1..total_rows_in_shopping_order LOOP
@@ -55,7 +55,7 @@ BEGIN
   dbms_output.put_line('Done with initial data load');
 
   -- keep on updating the same data
-  FOR counter IN 1..1000 LOOP        
+  FOR counter IN 1..7000 LOOP        
             
             --Get the rowids
             SELECT r bulk collect into rowids
@@ -85,7 +85,7 @@ END;
 
 BEGIN
     -- DBMS_SCHEDULER.STOP_JOB(job_name => 'POPULATE_DATA_FEED');
-    DBMS_SCHEDULER.DROP_JOB(job_name => 'POPULATE_DATA_FEED');
+    --- DBMS_SCHEDULER.DROP_JOB(job_name => 'POPULATE_DATA_FEED');
     DBMS_SCHEDULER.CREATE_JOB(  
       JOB_NAME      =>  'POPULATE_DATA_FEED_JOB',  
       JOB_TYPE      =>  'STORED_PROCEDURE',  
@@ -139,7 +139,7 @@ BEGIN
     metric_data_details.put('dimensions', mdd_dimensions);
 
     -- namespace, resourceGroup and name for the custom metric are arbitrary values, as per choice of developer
-    metric_data_details.put('namespace', 'atp_custom_metrics_ns_10');
+    metric_data_details.put('namespace', 'atp_custom_metrics_ns_30');
     metric_data_details.put('resourceGroup', 'adb_eco_group');
     metric_data_details.put('name', 'order_status');
     metric_data_details.put('compartmentId', in_metric_cmpt_id);
@@ -169,10 +169,9 @@ BEGIN
     arr_metric_data := json_array_t();
 
     LOCK TABLE SHOPPING_ORDER IN EXCLUSIVE MODE; 
-
     FOR indx in 1..array.count LOOP
       SELECT COUNT(*) INTO total_orders_by_status_cnt FROM SHOPPING_ORDER SO WHERE SO.STATUS=array(indx);
-      
+
       metric_data_details := get_metric_data_details_json_obj(
                                 array(indx),
                                 -- 'ocid1.compartment.oc1..aaaaaaaa2z4wup7a4enznwxi3mkk55cperdk3fcotagepjnan5utdb3tvakq',
@@ -264,13 +263,12 @@ END;
 
 
 BEGIN
-  --DBMS_SCHEDULER.DROP_JOB(job_name => 'POST_METRICS_JOB');
   DBMS_SCHEDULER.CREATE_JOB (
-   job_name           =>  'POST_METRICS_JOB',
+   job_name           =>  'POST_METRICS_TO_OCI_JOB',
    job_type           =>  'STORED_PROCEDURE',
    job_action         =>  'POST_METRICS_TO_OCI',
    start_date         =>   SYSTIMESTAMP,
-   repeat_interval    =>  'FREQ=SECONDLY;INTERVAL=120', /* every 10th second */
+   repeat_interval    =>  'FREQ=SECONDLY;INTERVAL=60', /* every 10th second */
    end_date           =>   SYSTIMESTAMP + INTERVAL '1200' SECOND,  /* in production prefer end_date instead or skip it alltogether */
    auto_drop          =>   TRUE,
    enabled            =>   TRUE,
@@ -319,11 +317,10 @@ SELECT count(*) FROM SHOPPING_ORDER;
 
 
 
-BEGIN
+
       --DBMS_SCHEDULER.DROP_JOB(job_name => 'POPULATE_DATA_FEED__');
-    DBMS_SCHEDULER.STOP_JOB(job_name => 'POPULATE_DATA_FEED__');
-
+    --DBMS_SCHEDULER.STOP_JOB(job_name => 'POPULATE_DATA_FEED__');
+    --SELECT * FROM SYS.DBA_JOBS_RUNNING;
     --DBMS_SCHEDULER.DROP_JOB(job_name => 'POPULATE_DATA_FEED', force => true);
-END;
 
-SELECT * FROM SYS.DBA_JOBS_RUNNING;
+
