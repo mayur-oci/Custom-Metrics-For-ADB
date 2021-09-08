@@ -65,33 +65,20 @@ END;
 CREATE OR REPLACE FUNCTION PREPARE_JSON_OBJECT_FROM_METRIC_ROWS (
     OCI_METADATA_JSON_OBJ JSON_OBJECT_T
 ) RETURN JSON_OBJECT_T IS
-
-    TOTAL_ORDERS_BY_STATUS_CNT     NUMBER := 0;
-    COUNT_DATE                     TIMESTAMP(6);
-    TOTAL_ROW_COUNT                NUMBER;
     OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T;
-    TYPE STATUS_ARRAY IS
-        VARRAY(8) OF VARCHAR2(30);
-    ARRAY                          STATUS_ARRAY := STATUS_ARRAY('ACCEPTED', 'PAYMENT_REJECTED', 'SHIPPED', 'ABORTED', 'OUT_FOR_DELIVERY',
-                                      'ORDER_DROPPED_NO_INVENTORY', 'PROCESSED', 'NOT_FULLFILLED');
     ARR_METRIC_DATA                JSON_ARRAY_T;
     METRIC_DATA_DETAILS            JSON_OBJECT_T;
+    PRETTY_JSON                    CLOB;
 BEGIN
     -- prepare JSON body for postmetrics api..
     -- for details please refer https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails
     ARR_METRIC_DATA := JSON_ARRAY_T();
 
-    SELECT COUNT(*) INTO TOTAL_ROW_COUNT FROM SHOPPING_ORDER_METRICS_TABLE;
-    DBMS_OUTPUT.PUT_LINE('TOTAL METRIC ROW COUNT IS '|| TOTAL_ROW_COUNT);
-
     -- PostMetrics api has soft limit of 50 unique metric stream per call, hence we cap it at 50. 
     -- For Production usecase where every metric data point is important, we can use chunking
     FOR METRIC_ROW IN (SELECT * FROM SHOPPING_ORDER_METRICS_TABLE 
                         ORDER BY CREATED_DATE DESC FETCH FIRST 50 ROWS ONLY) LOOP
-         DBMS_OUTPUT.PUT_LINE('inside for loop ' || METRIC_ROW.STATUS );
-        -- DBMS_OUTPUT.PUT_LINE('inside for loop ' || METRIC_ROW.STATUS || OCI_METADATA_JSON_OBJ.get_string('COMPARTMENT_OCID') ||
-        -- OCI_METADATA_JSON_OBJ.get_string('DATABASE_NAME') || TO_CHAR(METRIC_ROW.CREATED_DATE, 'yyyy-mm-dd"T"hh24:mi:ss.ff3"Z"')
-        -- );
+        DBMS_OUTPUT.PUT_LINE('inside for loop ' || METRIC_ROW.STATUS );
 
         METRIC_DATA_DETAILS := GET_METRIC_DATA_DETAILS_JSON_OBJ(
                                METRIC_ROW.STATUS,
@@ -103,18 +90,12 @@ BEGIN
         ARR_METRIC_DATA.APPEND(METRIC_DATA_DETAILS);
 
     END LOOP;
-
-      --DBMS_OUTPUT.PUT_LINE('ARR_METRIC_DATA '|| ARR_METRIC_DATA.to_clob);
-
     DBMS_OUTPUT.PUT_LINE('done with for loop ');
-
-    --DBMS_OUTPUT.put_line(json_serialize((arr_metric_data.to_string)  varchar2 (4000) pretty));
-    -- DBMS_OUTPUT.PUT_LINE(ARR_METRIC_DATA.TO_STRING);
     OCI_POST_METRICS_BODY_JSON_OBJ := JSON_OBJECT_T();
     OCI_POST_METRICS_BODY_JSON_OBJ.PUT('metricData', ARR_METRIC_DATA);
-        --DBMS_OUTPUT.PUT_LINE('done with metricdata  ');
 
-    DBMS_OUTPUT.PUT_LINE(OCI_POST_METRICS_BODY_JSON_OBJ.to_string);
+    --SELECT json_serialize ((OCI_POST_METRICS_BODY_JSON_OBJ.to_clob()) returning CLOB pretty) INTO PRETTY_JSON FROM DUAL;
+    --DBMS_OUTPUT.PUT_LINE(PRETTY_JSON);
 
     RETURN OCI_POST_METRICS_BODY_JSON_OBJ;
 END;
@@ -130,7 +111,6 @@ IS
     RESP                           DBMS_CLOUD_TYPES.RESP;
     EXCEPTION_POSTING_METRICS      EXCEPTION;
     SLEEP_IN_SECONDS               INTEGER := 5;
-    HTTP_CODE                      NUMBER;
 BEGIN
     FOR RETRY_COUNT in 1..MAX_RETRIES  LOOP
             -- invoking REST endpoint for OCI Monitoring API
@@ -168,14 +148,6 @@ END;
 /
 
 CREATE OR REPLACE PROCEDURE COMPUTE_AND_BUFFER_METRICS IS
-    OCI_METADATA_JSON_RESULT       VARCHAR2(1000);
-    OCI_METADATA_JSON_OBJ          JSON_OBJECT_T;
-    ADB_REGION                     VARCHAR2(25);
-    OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T;
-    RESP                           DBMS_CLOUD_TYPES.RESP;
-    ATTEMPT                        INTEGER := 0;
-    EXCEPTION_POSTING_METRICS      EXCEPTION;
-    SLEEP_IN_SECONDS               INTEGER := 5;
 BEGIN
 
     LOCK TABLE SHOPPING_ORDER_METRICS_TABLE IN EXCLUSIVE MODE;
@@ -190,10 +162,21 @@ BEGIN
         (SELECT ID FROM SHOPPING_ORDER_METRICS_TABLE ORDER BY CREATED_DATE FETCH FIRST 1000 ROWS ONLY);
     
     COMMIT;    
+    DBMS_OUTPUT.PUT_LINE('compute and buffering done @ ' || TO_CHAR(SYSTIMESTAMP));
+END;
+/
 
+CREATE OR REPLACE PROCEDURE PUBLISH_BUFFERED_METRICS_TO_OCI IS
+    OCI_METADATA_JSON_RESULT       VARCHAR2(1000);
+    OCI_METADATA_JSON_OBJ          JSON_OBJECT_T;
+    ADB_REGION                     VARCHAR2(25);
+    OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T;
+    TYPE ID_ARRAY IS VARRAY(50) OF NUMBER;
+    ARRAY                          ID_ARRAY;
+    TOTAL_METRICS_STREAM_CNT       NUMBER;
+    HTTP_CODE                      NUMBER;
 
-    DBMS_OUTPUT.PUT_LINE('compute done');
-
+BEGIN
     -- get the meta-data for this ADB Instance like its OCI compartmentId, region and DBName etc; as JSON in oci_metadata_json_result
     SELECT CLOUD_IDENTITY INTO OCI_METADATA_JSON_RESULT FROM V$PDBS; 
     -- dbms_output.put_line(oci_metadata_json_result);
@@ -201,31 +184,44 @@ BEGIN
     -- convert the JSON string into PLSQL JSON native JSON datatype json_object_t variable named oci_metadata_json_result
     OCI_METADATA_JSON_OBJ := JSON_OBJECT_T.PARSE(OCI_METADATA_JSON_RESULT);
 
-    -- convert the computed metrics to JSON string, with OCI metadata for additional decoration
-    OCI_POST_METRICS_BODY_JSON_OBJ := PREPARE_JSON_OBJECT_FROM_METRIC_ROWS(OCI_METADATA_JSON_OBJ);
+    
+    WHILE(TRUE) LOOP
+        LOCK TABLE SHOPPING_ORDER_METRICS_TABLE IN EXCLUSIVE MODE;
 
-    DBMS_OUTPUT.PUT_LINE('got json done');
+        SELECT COUNT(*) INTO TOTAL_METRICS_STREAM_CNT FROM SHOPPING_ORDER_METRICS_TABLE;
+        IF(TOTAL_METRICS_STREAM_CNT < 50) THEN
+            DBMS_OUTPUT.PUT_LINE('Less than 50 Metric-datapoints in buffer, hence not publishing, waiting for buffer to fill up');
+            EXIT;
+        END IF;   
 
-    ADB_REGION := OCI_METADATA_JSON_OBJ.GET_STRING('REGION');
-    DBMS_OUTPUT.PUT_LINE('got ADB_REGION done' || ADB_REGION);
+        OCI_POST_METRICS_BODY_JSON_OBJ := PREPARE_JSON_OBJECT_FROM_METRIC_ROWS(OCI_METADATA_JSON_OBJ);
+        ADB_REGION := OCI_METADATA_JSON_OBJ.GET_STRING('REGION');
 
-    -- POST_METRICS_DATA_TO_OCI(OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T, ADB_REGION VARCHAR2) 
-    --DELETE FROM SHOPPING_ORDER_METRICS_TABLE; COMMIT;   
+        HTTP_CODE := POST_METRICS_DATA_TO_OCI(OCI_POST_METRICS_BODY_JSON_OBJ, ADB_REGION);
+
+        IF(HTTP_CODE = 200) THEN
+            DBMS_OUTPUT.PUT_LINE('Deleting the published metrics');
+            DELETE FROM SHOPPING_ORDER_METRICS_TABLE WHERE ID IN 
+                                (SELECT ID FROM SHOPPING_ORDER_METRICS_TABLE 
+                                ORDER BY CREATED_DATE DESC FETCH FIRST 50 ROWS ONLY);
+        END IF;    
+                        
+        COMMIT;                                        
+    END LOOP;
 END;
 /
 
-
-
-----------------------------------------------------
-
+----------------------------------------------------    
 
 
 BEGIN
-    --DELETE FROM SHOPPING_ORDER_METRICS_TABLE;
     EXECUTE IMMEDIATE 'ANALYZE TABLE SHOPPING_ORDER_METRICS_TABLE COMPUTE STATISTICS';
-
-    ECOMMERCE_USER.POST_METRICS_TO_OCI();
+    ECOMMERCE_USER.COMPUTE_AND_BUFFER_METRICS();
+    ECOMMERCE_USER.PUBLISH_BUFFERED_METRICS_TO_OCI();    
 END;
 
-    --SELECT CLOUD_IDENTITY  FROM V$PDBS; 
-    -- SELECT COUNT(*)  FROM SHOPPING_ORDER_METRICS_TABLE;
+ -- SELECT COUNT(*)  FROM SHOPPING_ORDER_METRICS_TABLE;
+
+
+
+
