@@ -1,48 +1,6 @@
 
 set serveroutput on SIZE 100000;
------------------------------------------------------------------
-
-CREATE OR REPLACE FUNCTION GET_METRIC_DATA_DETAILS_JSON_OBJ (
-    IN_ORDER_STATUS         IN VARCHAR2,
-    IN_METRIC_CMPT_ID       IN VARCHAR2,
-    IN_ADB_NAME             IN VARCHAR2,
-    IN_METRIC_VALUE         IN NUMBER,
-    IN_TS_METRIC_COLLECTION IN VARCHAR2
-) RETURN JSON_OBJECT_T IS
-    METRIC_DATA_DETAILS JSON_OBJECT_T;
-    MDD_METADATA        JSON_OBJECT_T;
-    MDD_DIMENSIONS      JSON_OBJECT_T;
-    ARR_MDD_DATAPOINT   JSON_ARRAY_T;
-    MDD_DATAPOINT       JSON_OBJECT_T;
-BEGIN
-    MDD_METADATA := JSON_OBJECT_T();
-    MDD_METADATA.PUT('unit', 'TOTAL_ROW_COUNT'); -- metric unit is arbitrary, as per choice of developer
-
-    MDD_DIMENSIONS := JSON_OBJECT_T();
-    MDD_DIMENSIONS.PUT('dbname', IN_ADB_NAME);
-    MDD_DIMENSIONS.PUT('schema_name', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'));
-    MDD_DIMENSIONS.PUT('table_name', 'SHOPPING_ORDER_TEST_final');
-    MDD_DIMENSIONS.PUT('status_enum', IN_ORDER_STATUS);
-    MDD_DATAPOINT := JSON_OBJECT_T();
-    MDD_DATAPOINT.PUT('timestamp', IN_TS_METRIC_COLLECTION); --timestamp value RFC3339 compliant
-    MDD_DATAPOINT.PUT('value', IN_METRIC_VALUE);
-    MDD_DATAPOINT.PUT('count', 1);
-    ARR_MDD_DATAPOINT := JSON_ARRAY_T();
-    ARR_MDD_DATAPOINT.APPEND(MDD_DATAPOINT);
-    METRIC_DATA_DETAILS := JSON_OBJECT_T();
-    METRIC_DATA_DETAILS.PUT('datapoints', ARR_MDD_DATAPOINT);
-    METRIC_DATA_DETAILS.PUT('metadata', MDD_METADATA);
-    METRIC_DATA_DETAILS.PUT('dimensions', MDD_DIMENSIONS);
-
-    -- namespace, resourceGroup and name for the custom metric are arbitrary values, as per choice of developer
-    METRIC_DATA_DETAILS.PUT('namespace', 'adb_custom_metrics_111');
-    METRIC_DATA_DETAILS.PUT('resourceGroup', 'adb_eco_group');
-    METRIC_DATA_DETAILS.PUT('name', 'order_status');
-    METRIC_DATA_DETAILS.PUT('compartmentId', IN_METRIC_CMPT_ID);
-    RETURN METRIC_DATA_DETAILS;
-END;
-/
-
+-- we create table SHOPPING_ORDER_METRICS_TABLE and use it to collect/buffer computed metrics
 DECLARE
     COUNT_VAR NUMBER := 0;
 BEGIN
@@ -62,45 +20,24 @@ BEGIN
 END;
 /
 
-CREATE OR REPLACE FUNCTION PREPARE_JSON_OBJECT_FROM_METRIC_ROWS (
-    OCI_METADATA_JSON_OBJ JSON_OBJECT_T
-) RETURN JSON_OBJECT_T IS
-    OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T;
-    ARR_METRIC_DATA                JSON_ARRAY_T;
-    METRIC_DATA_DETAILS            JSON_OBJECT_T;
-    PRETTY_JSON                    CLOB;
+CREATE OR REPLACE PROCEDURE COMPUTE_AND_BUFFER_METRICS IS
 BEGIN
-    -- prepare JSON body for postmetrics api..
-    -- for details please refer https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails
-    ARR_METRIC_DATA := JSON_ARRAY_T();
 
-    -- PostMetrics api has soft limit of 50 unique metric stream per call, hence we cap it at 50. 
-    -- For Production usecase where every metric data point is important, we can use chunking
-    FOR METRIC_ROW IN (SELECT * FROM SHOPPING_ORDER_METRICS_TABLE 
-                        ORDER BY CREATED_DATE DESC FETCH FIRST 50 ROWS ONLY) LOOP
-        DBMS_OUTPUT.PUT_LINE('inside for loop ' || METRIC_ROW.STATUS );
-
-        METRIC_DATA_DETAILS := GET_METRIC_DATA_DETAILS_JSON_OBJ(
-                               METRIC_ROW.STATUS,
-                               OCI_METADATA_JSON_OBJ.GET_STRING('COMPARTMENT_OCID'), 
-                               OCI_METADATA_JSON_OBJ.GET_STRING('DATABASE_NAME'), 
-                               METRIC_ROW.COUNT, 
-                               TO_CHAR(METRIC_ROW.CREATED_DATE, 'yyyy-mm-dd"T"hh24:mi:ss.ff3"Z"'));
-      --DBMS_OUTPUT.PUT_LINE('METRIC_DATA_DETAILS '|| METRIC_DATA_DETAILS.to_clob);
-        ARR_METRIC_DATA.APPEND(METRIC_DATA_DETAILS);
-
-    END LOOP;
-    DBMS_OUTPUT.PUT_LINE('done with for loop ');
-    OCI_POST_METRICS_BODY_JSON_OBJ := JSON_OBJECT_T();
-    OCI_POST_METRICS_BODY_JSON_OBJ.PUT('metricData', ARR_METRIC_DATA);
-
-    --SELECT json_serialize ((OCI_POST_METRICS_BODY_JSON_OBJ.to_clob()) returning CLOB pretty) INTO PRETTY_JSON FROM DUAL;
-    --DBMS_OUTPUT.PUT_LINE(PRETTY_JSON);
-
-    RETURN OCI_POST_METRICS_BODY_JSON_OBJ;
+    LOCK TABLE SHOPPING_ORDER_METRICS_TABLE IN EXCLUSIVE MODE;
+    
+    -- compute simple metric for getting count order by order-status 
+    -- and store in buffer table SHOPPING_ORDER_METRICS_TABLE
+    INSERT INTO SHOPPING_ORDER_METRICS_TABLE (STATUS, COUNT, CREATED_DATE) 
+      SELECT STATUS, COUNT(*), SYSTIMESTAMP AT TIME ZONE 'UTC' FROM SHOPPING_ORDER SO GROUP BY SO.STATUS;
+    
+    -- we buffer at most 1000 metric points, please configure as per your needs
+    DELETE FROM SHOPPING_ORDER_METRICS_TABLE SOMT WHERE SOMT.ID NOT IN
+        (SELECT ID FROM SHOPPING_ORDER_METRICS_TABLE ORDER BY CREATED_DATE FETCH FIRST 1000 ROWS ONLY);
+    
+    COMMIT;    
+    DBMS_OUTPUT.PUT_LINE('compute and buffering done @ ' || TO_CHAR(SYSTIMESTAMP));
 END;
 /
-
 
 
 CREATE OR REPLACE FUNCTION POST_METRICS_DATA_TO_OCI(OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T, ADB_REGION VARCHAR2) 
@@ -147,22 +84,85 @@ BEGIN
 END;
 /
 
-CREATE OR REPLACE PROCEDURE COMPUTE_AND_BUFFER_METRICS IS
-BEGIN
 
-    LOCK TABLE SHOPPING_ORDER_METRICS_TABLE IN EXCLUSIVE MODE;
-    
-    -- compute simple metric for getting count order by order-status 
-    -- and store in buffer table SHOPPING_ORDER_METRICS_TABLE
-    INSERT INTO SHOPPING_ORDER_METRICS_TABLE (STATUS, COUNT, CREATED_DATE) 
-      SELECT STATUS, COUNT(*), SYSTIMESTAMP AT TIME ZONE 'UTC' FROM SHOPPING_ORDER SO GROUP BY SO.STATUS;
-    
-    -- we buffer at most 1000 metric points, please configure as per your needs
-    DELETE FROM SHOPPING_ORDER_METRICS_TABLE SOMT WHERE SOMT.ID NOT IN
-        (SELECT ID FROM SHOPPING_ORDER_METRICS_TABLE ORDER BY CREATED_DATE FETCH FIRST 1000 ROWS ONLY);
-    
-    COMMIT;    
-    DBMS_OUTPUT.PUT_LINE('compute and buffering done @ ' || TO_CHAR(SYSTIMESTAMP));
+CREATE OR REPLACE FUNCTION GET_METRIC_DATA_DETAILS_JSON_OBJ (
+    IN_ORDER_STATUS         IN VARCHAR2,
+    IN_METRIC_CMPT_ID       IN VARCHAR2,
+    IN_ADB_NAME             IN VARCHAR2,
+    IN_METRIC_VALUE         IN NUMBER,
+    IN_TS_METRIC_COLLECTION IN VARCHAR2
+) RETURN JSON_OBJECT_T IS
+    METRIC_DATA_DETAILS JSON_OBJECT_T;
+    MDD_METADATA        JSON_OBJECT_T;
+    MDD_DIMENSIONS      JSON_OBJECT_T;
+    ARR_MDD_DATAPOINT   JSON_ARRAY_T;
+    MDD_DATAPOINT       JSON_OBJECT_T;
+BEGIN
+    MDD_METADATA := JSON_OBJECT_T();
+    MDD_METADATA.PUT('unit', 'TOTAL_ROW_COUNT'); -- metric unit is arbitrary, as per choice of developer
+
+    MDD_DIMENSIONS := JSON_OBJECT_T();
+    MDD_DIMENSIONS.PUT('dbname', IN_ADB_NAME);
+    MDD_DIMENSIONS.PUT('schema_name', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'));
+    MDD_DIMENSIONS.PUT('table_name', 'SHOPPING_ORDER_BUFFER');
+    MDD_DIMENSIONS.PUT('status_enum', IN_ORDER_STATUS);
+    MDD_DATAPOINT := JSON_OBJECT_T();
+    MDD_DATAPOINT.PUT('timestamp', IN_TS_METRIC_COLLECTION); --timestamp value RFC3339 compliant
+    MDD_DATAPOINT.PUT('value', IN_METRIC_VALUE);
+    MDD_DATAPOINT.PUT('count', 1);
+    ARR_MDD_DATAPOINT := JSON_ARRAY_T();
+    ARR_MDD_DATAPOINT.APPEND(MDD_DATAPOINT);
+    METRIC_DATA_DETAILS := JSON_OBJECT_T();
+    METRIC_DATA_DETAILS.PUT('datapoints', ARR_MDD_DATAPOINT);
+    METRIC_DATA_DETAILS.PUT('metadata', MDD_METADATA);
+    METRIC_DATA_DETAILS.PUT('dimensions', MDD_DIMENSIONS);
+
+    -- namespace, resourceGroup and name for the custom metric are arbitrary values, as per choice of developer
+    METRIC_DATA_DETAILS.PUT('namespace', 'adb_custom_metrics_111');
+    METRIC_DATA_DETAILS.PUT('resourceGroup', 'adb_eco_group');
+    METRIC_DATA_DETAILS.PUT('name', 'order_status');
+    METRIC_DATA_DETAILS.PUT('compartmentId', IN_METRIC_CMPT_ID);
+    RETURN METRIC_DATA_DETAILS;
+END;
+/
+
+CREATE OR REPLACE FUNCTION PREPARE_JSON_OBJECT_FROM_METRIC_ROWS (
+    OCI_METADATA_JSON_OBJ JSON_OBJECT_T, BATCH_SIZE_FOR_EACH_POST NUMBER
+) RETURN JSON_OBJECT_T IS
+    OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T;
+    ARR_METRIC_DATA                JSON_ARRAY_T;
+    METRIC_DATA_DETAILS            JSON_OBJECT_T;
+    PRETTY_JSON                    CLOB;
+BEGIN
+    -- prepare JSON body for postmetrics api..
+    -- for details please refer https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails
+    ARR_METRIC_DATA := JSON_ARRAY_T();
+
+    -- PostMetrics api has soft limit of 50 unique metric stream per call, hence we cap it at 50. 
+    -- For Production usecase where every metric data point is important, we can use chunking
+    FOR METRIC_ROW IN (SELECT * FROM SHOPPING_ORDER_METRICS_TABLE 
+                        ORDER BY CREATED_DATE DESC FETCH FIRST BATCH_SIZE_FOR_EACH_POST ROWS ONLY) LOOP
+                        
+        --DBMS_OUTPUT.PUT_LINE('inside for loop ' || METRIC_ROW.STATUS );
+
+        METRIC_DATA_DETAILS := GET_METRIC_DATA_DETAILS_JSON_OBJ(
+                               METRIC_ROW.STATUS,
+                               OCI_METADATA_JSON_OBJ.GET_STRING('COMPARTMENT_OCID'), 
+                               OCI_METADATA_JSON_OBJ.GET_STRING('DATABASE_NAME'), 
+                               METRIC_ROW.COUNT, 
+                               TO_CHAR(METRIC_ROW.CREATED_DATE, 'yyyy-mm-dd"T"hh24:mi:ss.ff3"Z"'));
+        --DBMS_OUTPUT.PUT_LINE('METRIC_DATA_DETAILS '|| METRIC_DATA_DETAILS.to_clob);
+        ARR_METRIC_DATA.APPEND(METRIC_DATA_DETAILS);
+
+    END LOOP;
+    DBMS_OUTPUT.PUT_LINE('done with for loop ');
+    OCI_POST_METRICS_BODY_JSON_OBJ := JSON_OBJECT_T();
+    OCI_POST_METRICS_BODY_JSON_OBJ.PUT('metricData', ARR_METRIC_DATA);
+
+    --SELECT json_serialize ((OCI_POST_METRICS_BODY_JSON_OBJ.to_clob()) returning CLOB pretty) INTO PRETTY_JSON FROM DUAL;
+    --DBMS_OUTPUT.PUT_LINE(PRETTY_JSON);
+
+    RETURN OCI_POST_METRICS_BODY_JSON_OBJ;
 END;
 /
 
@@ -175,6 +175,7 @@ CREATE OR REPLACE PROCEDURE PUBLISH_BUFFERED_METRICS_TO_OCI IS
     ARRAY                          ID_ARRAY;
     TOTAL_METRICS_STREAM_CNT       NUMBER;
     HTTP_CODE                      NUMBER;
+    BATCH_SIZE_FOR_EACH_POST       NUMBER:=8;
 
 BEGIN
     -- get the meta-data for this ADB Instance like its OCI compartmentId, region and DBName etc; as JSON in oci_metadata_json_result
@@ -189,12 +190,13 @@ BEGIN
         LOCK TABLE SHOPPING_ORDER_METRICS_TABLE IN EXCLUSIVE MODE;
 
         SELECT COUNT(*) INTO TOTAL_METRICS_STREAM_CNT FROM SHOPPING_ORDER_METRICS_TABLE;
-        IF(TOTAL_METRICS_STREAM_CNT < 50) THEN
-            DBMS_OUTPUT.PUT_LINE('Less than 50 Metric-datapoints in buffer, hence not publishing, waiting for buffer to fill up');
+        IF(TOTAL_METRICS_STREAM_CNT < BATCH_SIZE_FOR_EACH_POST) THEN
+            DBMS_OUTPUT.PUT_LINE('Less than '||BATCH_SIZE_FOR_EACH_POST||' Metric-datapoints in buffer:'|| TOTAL_METRICS_STREAM_CNT ||
+                                 ', hence not publishing, waiting for buffer to fill up');
             EXIT;
         END IF;   
 
-        OCI_POST_METRICS_BODY_JSON_OBJ := PREPARE_JSON_OBJECT_FROM_METRIC_ROWS(OCI_METADATA_JSON_OBJ);
+        OCI_POST_METRICS_BODY_JSON_OBJ := PREPARE_JSON_OBJECT_FROM_METRIC_ROWS(OCI_METADATA_JSON_OBJ, BATCH_SIZE_FOR_EACH_POST);
         ADB_REGION := OCI_METADATA_JSON_OBJ.GET_STRING('REGION');
 
         HTTP_CODE := POST_METRICS_DATA_TO_OCI(OCI_POST_METRICS_BODY_JSON_OBJ, ADB_REGION);
@@ -215,6 +217,7 @@ END;
 
 
 BEGIN
+    DELETE FROM SHOPPING_ORDER_METRICS_TABLE;
     EXECUTE IMMEDIATE 'ANALYZE TABLE SHOPPING_ORDER_METRICS_TABLE COMPUTE STATISTICS';
     ECOMMERCE_USER.COMPUTE_AND_BUFFER_METRICS();
     ECOMMERCE_USER.PUBLISH_BUFFERED_METRICS_TO_OCI();    
