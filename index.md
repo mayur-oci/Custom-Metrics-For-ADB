@@ -44,7 +44,7 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
 6. Schedule and run another PL/SQL script to compute, collect/buffer & post the custom metrics *Oracle Monitoring Service*.
 
 >   Needless to say, in production use-case you will have your own application doing the real world data population and updates. 
-   Hence, steps 4 and 5 won't be needed in your production use-case.
+   Hence, steps 3 and 4 won't be needed in your production use-case.
 
 ## Detailed Steps:
 1. Create Dynamic Group for your ADB instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
@@ -92,20 +92,19 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
      EXEC DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL(username => 'ECOMMERCE_USER');
      ```
  
-     4. This step is optional and here we just verify the operations we did in previous step.
-         Please note the Oracle DB credential corresponding to Oracle Cloud Resource Principal once enabled, is always owned by ADMIN user for ADB.  
-         You can verify the same as follows.
+   4. This step is optional and here we just verify the operations we did in previous step.
+    Please note the Oracle DB credential corresponding to Oracle Cloud Resource Principal once enabled, is always owned by ADMIN user for ADB.  
+    You can verify the same as follows.
       
     ```plsql
-       SELECT OWNER, CREDENTIAL_NAME FROM DBA_CREDENTIALS WHERE CREDENTIAL_NAME =  'OCI$RESOURCE_PRINCIPAL'  AND OWNER =  'ADMIN';
+     SELECT OWNER, CREDENTIAL_NAME FROM DBA_CREDENTIALS WHERE CREDENTIAL_NAME =  'OCI$RESOURCE_PRINCIPAL'  AND OWNER =  'ADMIN';
        
-       -- To check if any other user, here ECOMMERCE_USER has access DB credential(hence to OCI Resource Principal), you have to check *DBA_TAB_PRIVS* view, as follows.
-       SELECT * from DBA_TAB_PRIVS WHERE DBA_TAB_PRIVS.GRANTEE='ECOMMERCE_USER';
+     -- To check if any other user, here ECOMMERCE_USER has access DB credential(hence to OCI Resource Principal), you have to check *DBA_TAB_PRIVS* view, as follows.
+     SELECT * from DBA_TAB_PRIVS WHERE DBA_TAB_PRIVS.GRANTEE='ECOMMERCE_USER';
     ```
    
 3. Create example data table `SHOPPING_ORDER` to showcase computation of metrics on a database tables. 
 
-   You can create this table in newly created schema in step 2 or in already existing DB schema of your choice.
    The table schema is self-explanatory but please take a note status column.
 
    ```plsql
@@ -140,8 +139,9 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
    OUT_FOR_DELIVERY, ORDER_DROPPED_NO_INVENTORY,
    PROCESSED, NOT_FULFILLED]`.
 
+
 4. Read through the following PL/SQL script. It has all the necessary stored procedures to populate data in ***SHOPPING_ORDER*** table. The script will keep on first adding 10000 rows into ***SHOPPING_ORDER*** table with random data and then it will update the same data.
-Script will run approximately for 20 minutes on ATP with 1 OCPU with 1TB storage.   
+Script will run approximately for 15 minutes on ATP with 1 OCPU and 1TB storage.   
    ```plsql
     CREATE OR REPLACE PROCEDURE POPULATE_DATA_FEED IS
         ARR_STATUS_RANDOM_INDEX      INTEGER;
@@ -208,35 +208,261 @@ Script will run approximately for 20 minutes on ATP with 1 OCPU with 1TB storage
    ```
 
 5. Now let us dive deep into actual crux of this tutorial: script which computes the custom metrics and publishes it to Oracle Cloud Monitoring Service.
+   We will analyse the script piecemeal.
+   1. We create table `SHOPPING_ORDER_METRICS_TABLE` and use it to collect/buffer computed metrics.
    
-
-
-  ```plsql
-
-   
-       
-   ```
-
-   We will analyse the above script in topdown fashion, going from publishing the computed custom metrics then to their actual computation.
-   The stored procedure `post_metrics_to_oci` is the piece of code which first computes the metric value and 
-   then actually invokes the [PostMetricsData API](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData), to publish these custom metrics Oracle Cloud Monitoring Service.
-   
-   As with every Oracle Cloud API, you need proper IAM authorization to invoke it. We pass the same as follows, with the named parameter `credential_name => 'OCI$RESOURCE_PRINCIPAL'`. 
-   The DB credential `OCI$RESOURCE_PRINCIPAL` is linked to dynamic group `adb_dg` we created earlier in step 2 and user `ECOMMERCE_USER` already has access to the same, from step 3. 
-   Hence by *chain of trust*, this PL/SQL script executed by `ECOMMERCE_USER` has authorization to post the custom metrics to Oracle Monitoring Service. 
    ```plsql
-            resp := dbms_cloud.send_request(
-                    credential_name => 'OCI$RESOURCE_PRINCIPAL',
-                    uri => 'https://telemetry-ingestion.' || adb_region || '.oraclecloud.com/20180401/metrics',
-                    method => dbms_cloud.METHOD_POST,
-                    body => UTL_RAW.cast_to_raw(oci_post_metrics_body_json_obj.to_string));   
-   ```
-   `dbms_cloud.send_request` is an inbuilt PL/SQL stored procedure invoke any rest endpoint, preinstalled with every ADB. Here we are using it to invoke Oracle Cloud Monitoring Service REST API.
-   [PostMetricsData API](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData) expects JSON body of the type [PostMetricDataDetails](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails). 
-   We create this JSON with variable `oci_post_metrics_body_json_obj` of PL/SQL inbuilt datatype `json_object_t`. This enables us to easily create complex JSONs with strong safety PL/SQL type system.
+    DECLARE
+        COUNT_VAR NUMBER := 0;
+    BEGIN
+        SELECT COUNT(*) INTO COUNT_VAR FROM ALL_TABLES WHERE TABLE_NAME = 'SHOPPING_ORDER_METRICS_TABLE';
 
-   We need to know region of this ADB instance to determine Oracle Monitoring Service endpoint for this region. We fetch this meta-data from view `V$PDBS` along with other information like compartmentId and DBName for this ADB. 
-   This information acts as dimensions and metadata information for our custom metrics, helping us to correlate these custom metrics with our ADB Instance Service. 
+        IF COUNT_VAR > 0 THEN
+            DBMS_OUTPUT.PUT_LINE('TABLE EXISTS ALREADY!');
+        ELSE
+            -- table doesn't exist
+            EXECUTE IMMEDIATE 'CREATE TABLE SHOPPING_ORDER_METRICS_TABLE(
+                                ID                 NUMBER         GENERATED BY DEFAULT ON NULL AS IDENTITY PRIMARY KEY,
+                                CREATED_DATE       TIMESTAMP(6)   DEFAULT CURRENT_TIMESTAMP,
+                                STATUS             VARCHAR2(30 CHAR),
+                                COUNT              NUMBER)';
+        END IF;
+
+    END;
+    /
+   ```
+
+   2. Now let us create a stored procedure which computes the metric: Count for number of Orders by Status values. 
+      It then buffers the computed metrics in our buffer table `SHOPPING_ORDER_METRICS_TABLE` created in previous step.
+      We buffer to make sure, in-case of temporary interruption when publishing the metrics to *Oracle Cloud Monitoring Service*, we can retry posting them again in the future.
+
+   ```plsql
+    CREATE OR REPLACE PROCEDURE COMPUTE_AND_BUFFER_METRICS IS
+    BEGIN    
+        -- compute simple metric for getting count order by order-status 
+        -- and store in buffer table SHOPPING_ORDER_METRICS_TABLE
+        INSERT INTO SHOPPING_ORDER_METRICS_TABLE (STATUS, COUNT, CREATED_DATE) 
+        SELECT STATUS, COUNT(*), SYSTIMESTAMP AT TIME ZONE 'UTC' FROM SHOPPING_ORDER SO GROUP BY SO.STATUS;
+        
+        -- we buffer at most 1000 metric points, please configure as per your needs
+        DELETE FROM SHOPPING_ORDER_METRICS_TABLE SOMT WHERE SOMT.ID NOT IN
+            (SELECT ID FROM SHOPPING_ORDER_METRICS_TABLE ORDER BY CREATED_DATE FETCH FIRST 1000 ROWS ONLY);
+        
+        COMMIT;    
+        DBMS_OUTPUT.PUT_LINE('compute and buffering done @ ' || TO_CHAR(SYSTIMESTAMP));
+    END;
+    /
+   ```
+      In order to limit the size of buffer table, we trim it, if its size crosses 1000 rows.
+
+   3. Now we need function which converts buffered metrics from `SHOPPING_ORDER_METRICS_TABLE` into JSON objects that [PostMetricsData API](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData) expects in its request.
+      This is exactly what PL/SQL function `PREPARE_JSON_OBJECT_FROM_METRIC_ROWS` performs. 
+      This function converts `BATCH_SIZE_FOR_EACH_POST` number of recent most metrics data-points from `SHOPPING_ORDER_METRICS_TABLE` into `OCI_METADATA_JSON_OBJ JSON_OBJECT_T`.
+      
+      `OCI_METADATA_JSON_OBJ` is variable of PL/SQL inbuilt JSON datatype `JSON_OBJECT_T`. 
+      We have constructed `OCI_METADATA_JSON_OBJ` with same JSON structure as per [PostMetricDataDetails](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails), request body for PostMetricsData API. 
+
+   ```plsql
+    CREATE OR REPLACE FUNCTION GET_METRIC_DATA_DETAILS_JSON_OBJ (
+        IN_ORDER_STATUS         IN VARCHAR2,
+        IN_METRIC_CMPT_ID       IN VARCHAR2,
+        IN_ADB_NAME             IN VARCHAR2,
+        IN_METRIC_VALUE         IN NUMBER,
+        IN_TS_METRIC_COLLECTION IN VARCHAR2
+    ) RETURN JSON_OBJECT_T IS
+        METRIC_DATA_DETAILS JSON_OBJECT_T;
+        MDD_METADATA        JSON_OBJECT_T;
+        MDD_DIMENSIONS      JSON_OBJECT_T;
+        ARR_MDD_DATAPOINT   JSON_ARRAY_T;
+        MDD_DATAPOINT       JSON_OBJECT_T;
+    BEGIN
+        MDD_METADATA := JSON_OBJECT_T();
+        MDD_METADATA.PUT('unit', 'TOTAL_ROW_COUNT'); -- metric unit is arbitrary, as per choice of developer
+
+        MDD_DIMENSIONS := JSON_OBJECT_T();
+        MDD_DIMENSIONS.PUT('dbname', IN_ADB_NAME);
+        MDD_DIMENSIONS.PUT('schema_name', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'));
+        MDD_DIMENSIONS.PUT('table_name', 'SHOPPING_ORDER_BUFFER');
+        MDD_DIMENSIONS.PUT('status_enum', IN_ORDER_STATUS);
+        MDD_DATAPOINT := JSON_OBJECT_T();
+        MDD_DATAPOINT.PUT('timestamp', IN_TS_METRIC_COLLECTION); --timestamp value RFC3339 compliant
+        MDD_DATAPOINT.PUT('value', IN_METRIC_VALUE);
+        MDD_DATAPOINT.PUT('count', 1);
+        ARR_MDD_DATAPOINT := JSON_ARRAY_T();
+        ARR_MDD_DATAPOINT.APPEND(MDD_DATAPOINT);
+        METRIC_DATA_DETAILS := JSON_OBJECT_T();
+        METRIC_DATA_DETAILS.PUT('datapoints', ARR_MDD_DATAPOINT);
+        METRIC_DATA_DETAILS.PUT('metadata', MDD_METADATA);
+        METRIC_DATA_DETAILS.PUT('dimensions', MDD_DIMENSIONS);
+
+        -- namespace, resourceGroup and name for the custom metric are arbitrary values, as per choice of developer
+        METRIC_DATA_DETAILS.PUT('namespace', 'adb_custom_metrics_111');
+        METRIC_DATA_DETAILS.PUT('resourceGroup', 'adb_eco_group');
+        METRIC_DATA_DETAILS.PUT('name', 'order_status');
+        METRIC_DATA_DETAILS.PUT('compartmentId', IN_METRIC_CMPT_ID);
+        RETURN METRIC_DATA_DETAILS;
+    END;
+    /
+
+    CREATE OR REPLACE FUNCTION PREPARE_JSON_OBJECT_FROM_METRIC_ROWS (
+        OCI_METADATA_JSON_OBJ JSON_OBJECT_T, BATCH_SIZE_FOR_EACH_POST NUMBER
+    ) RETURN JSON_OBJECT_T IS
+        OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T;
+        ARR_METRIC_DATA                JSON_ARRAY_T;
+        METRIC_DATA_DETAILS            JSON_OBJECT_T;
+        PRETTY_JSON                    CLOB;
+    BEGIN
+        -- prepare JSON body for postmetrics api..
+        -- for details please refer https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails
+        ARR_METRIC_DATA := JSON_ARRAY_T();
+
+        -- PostMetrics api has soft limit of 50 unique metric stream per call, hence we cap it at 50. 
+        -- For Production usecase where every metric data point is important, we can use chunking
+        FOR METRIC_ROW IN (SELECT * FROM SHOPPING_ORDER_METRICS_TABLE 
+                            ORDER BY CREATED_DATE DESC FETCH FIRST BATCH_SIZE_FOR_EACH_POST ROWS ONLY) LOOP
+                            
+            --DBMS_OUTPUT.PUT_LINE('inside for loop ' || METRIC_ROW.STATUS );
+
+            METRIC_DATA_DETAILS := GET_METRIC_DATA_DETAILS_JSON_OBJ(
+                                METRIC_ROW.STATUS,
+                                OCI_METADATA_JSON_OBJ.GET_STRING('COMPARTMENT_OCID'), 
+                                OCI_METADATA_JSON_OBJ.GET_STRING('DATABASE_NAME'), 
+                                METRIC_ROW.COUNT, 
+                                TO_CHAR(METRIC_ROW.CREATED_DATE, 'yyyy-mm-dd"T"hh24:mi:ss.ff3"Z"'));
+            --DBMS_OUTPUT.PUT_LINE('METRIC_DATA_DETAILS '|| METRIC_DATA_DETAILS.to_clob);
+            ARR_METRIC_DATA.APPEND(METRIC_DATA_DETAILS);
+
+        END LOOP;
+        DBMS_OUTPUT.PUT_LINE('done with for loop ');
+        OCI_POST_METRICS_BODY_JSON_OBJ := JSON_OBJECT_T();
+        OCI_POST_METRICS_BODY_JSON_OBJ.PUT('metricData', ARR_METRIC_DATA);
+
+        --SELECT json_serialize ((OCI_POST_METRICS_BODY_JSON_OBJ.to_clob()) returning CLOB pretty) INTO PRETTY_JSON FROM DUAL;
+        --DBMS_OUTPUT.PUT_LINE(PRETTY_JSON);
+
+        RETURN OCI_POST_METRICS_BODY_JSON_OBJ;
+    END;
+    /
+
+   ```
+   
+   4. Next we need PL/SQL code to actually publish these converted metrics to *Oracle Cloud Monitoring Service* using PostMetricsData API.
+      We achieve the same with PL/SQL function named `POST_METRICS_DATA_TO_OCI` and stored procedure `PUBLISH_BUFFERED_METRICS_TO_OCI`.
+   
+   ```plsql
+
+    CREATE OR REPLACE FUNCTION POST_METRICS_DATA_TO_OCI(OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T, ADB_REGION VARCHAR2) 
+    RETURN NUMBER 
+    IS
+        RETRY_COUNT                    INTEGER := 0;
+        MAX_RETRIES                    INTEGER := 3;
+        RESP                           DBMS_CLOUD_TYPES.RESP;
+        EXCEPTION_POSTING_METRICS      EXCEPTION;
+        SLEEP_IN_SECONDS               INTEGER := 5;
+    BEGIN
+        FOR RETRY_COUNT in 1..MAX_RETRIES  LOOP
+                -- invoking REST endpoint for OCI Monitoring API
+                -- for details please refer https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData
+            RESP := DBMS_CLOUD.SEND_REQUEST(CREDENTIAL_NAME => 'OCI$RESOURCE_PRINCIPAL', 
+                                            URI => 'https://telemetry-ingestion.'|| ADB_REGION|| '.oraclecloud.com/20180401/metrics', 
+                                            METHOD =>DBMS_CLOUD.METHOD_POST, 
+                                            BODY => UTL_RAW.CAST_TO_RAW(OCI_POST_METRICS_BODY_JSON_OBJ.TO_STRING));
+
+            IF DBMS_CLOUD.GET_RESPONSE_STATUS_CODE(RESP) = 200 THEN    -- when it is 200 from OCI Metrics API, all good
+                DBMS_OUTPUT.PUT_LINE('POSTED METRICS SUCCESSFULLY TO OCI MONIOTRING');
+                RETURN 200;
+            ELSIF DBMS_CLOUD.GET_RESPONSE_STATUS_CODE(RESP) = 429 THEN -- 429 is caused by throttling
+                IF RETRY_COUNT < MAX_RETRIES THEN
+                    -- increase sleep time for each retry, doing exponential backoff
+                    DBMS_SESSION.SLEEP(POWER(SLEEP_IN_SECONDS, RETRY_COUNT+1));
+                    DBMS_OUTPUT.PUT_LINE('RETRYING THE POSTMETRICS API CALL');
+                ELSE
+                    DBMS_OUTPUT.PUT_LINE('ABANDONING POSTMETRICS CALLS, AFTER 3 RETRIES, CAUSED BY THROTTLING, WILL BERETRIED IN NEXT SCHEDULED RUN');
+                    RETURN 429;
+                END IF;
+            ELSE -- for any other http status code....1. log error, 2. raise exception and then quit posting metrics, as it is most probably a persistent error 
+                    DBMS_OUTPUT.PUT_LINE('IRRECOVERABLE ERROR HAPPENED WHEN POSTING METRICS TO OCI MONITORING, PLEASE SEE CONSOLE FOR ERRORS');
+                    -- Response Body in TEXT format
+                    DBMS_OUTPUT.put_line('Body: ' || '------------' || CHR(10) || DBMS_CLOUD.get_response_text(resp) || CHR(10));
+                    -- Response Headers in JSON format
+                    DBMS_OUTPUT.put_line('Headers: ' || CHR(10) || '------------' || CHR(10) || DBMS_CLOUD.get_response_headers(resp).to_clob || CHR(10));
+                    -- Response Status Code
+                    DBMS_OUTPUT.put_line('Status Code: ' || CHR(10) || '------------' || CHR(10) || DBMS_CLOUD.get_response_status_code(resp));
+                    RETURN 500;
+            END IF;
+
+        END LOOP;
+    END;
+    /
+
+    CREATE OR REPLACE PROCEDURE PUBLISH_BUFFERED_METRICS_TO_OCI IS
+        OCI_METADATA_JSON_RESULT       VARCHAR2(1000);
+        OCI_METADATA_JSON_OBJ          JSON_OBJECT_T;
+        ADB_REGION                     VARCHAR2(25);
+        OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T;
+        TYPE ID_ARRAY IS VARRAY(50) OF NUMBER;
+        ARRAY                          ID_ARRAY;
+        TOTAL_METRICS_STREAM_CNT       NUMBER;
+        HTTP_CODE                      NUMBER;
+        BATCH_SIZE_FOR_EACH_POST       NUMBER:=8; -- not more than 50! as per PostMetricsData API docs
+    BEGIN
+        -- get the meta-data for this ADB Instance like its OCI compartmentId, region and DBName etc; as JSON in oci_metadata_json_result
+        SELECT CLOUD_IDENTITY INTO OCI_METADATA_JSON_RESULT FROM V$PDBS; 
+        -- dbms_output.put_line(oci_metadata_json_result);
+
+        -- convert the JSON string into PLSQL JSON native JSON datatype json_object_t variable named oci_metadata_json_result
+        OCI_METADATA_JSON_OBJ := JSON_OBJECT_T.PARSE(OCI_METADATA_JSON_RESULT);
+
+        
+        WHILE(TRUE) LOOP
+            SELECT COUNT(*) INTO TOTAL_METRICS_STREAM_CNT FROM SHOPPING_ORDER_METRICS_TABLE;
+            IF(TOTAL_METRICS_STREAM_CNT < BATCH_SIZE_FOR_EACH_POST) THEN
+                DBMS_OUTPUT.PUT_LINE('Less than '||BATCH_SIZE_FOR_EACH_POST||' Metric-datapoints in buffer:'|| TOTAL_METRICS_STREAM_CNT || ', hence not publishing, waiting for buffer to fill up');
+                EXIT;
+            END IF;   
+
+            OCI_POST_METRICS_BODY_JSON_OBJ := PREPARE_JSON_OBJECT_FROM_METRIC_ROWS(OCI_METADATA_JSON_OBJ, BATCH_SIZE_FOR_EACH_POST);
+            ADB_REGION := OCI_METADATA_JSON_OBJ.GET_STRING('REGION');
+
+            HTTP_CODE := POST_METRICS_DATA_TO_OCI(OCI_POST_METRICS_BODY_JSON_OBJ, ADB_REGION);
+
+            IF(HTTP_CODE = 200) THEN
+                DBMS_OUTPUT.PUT_LINE('Deleting the published metrics');
+                DELETE FROM SHOPPING_ORDER_METRICS_TABLE WHERE ID IN 
+                                    (SELECT ID FROM SHOPPING_ORDER_METRICS_TABLE 
+                                    ORDER BY CREATED_DATE DESC FETCH FIRST 50 ROWS ONLY);
+            END IF;    
+                            
+            COMMIT;    
+
+            -- PostMetricData API has TPS rate limit of 50, just for safety  
+            -- Hence sleep for atleast seconds => (1/50) to avoid throttling
+            -- DBMS_SESSION.SLEEP(seconds => (1/50));                                  
+        END LOOP;
+    END;
+    /
+   ```
+
+   Let us start with understanding function `POST_METRICS_DATA_TO_OCI`, which actually invokes *PostMetricsData API*!
+   As with every Oracle Cloud API, you need proper IAM authorization to invoke it. We pass the same as follows, with the named parameter `credential_name => 'OCI$RESOURCE_PRINCIPAL'`.
+   The DB credential `OCI$RESOURCE_PRINCIPAL` is linked to dynamic group `adb_dg` we created earlier in step 2 and user `ECOMMERCE_USER` already has access to the same, from step 3.
+   Hence by *chain of trust*, this PL/SQL script executed by `ECOMMERCE_USER` has authorization to post the custom metrics to *Oracle Cloud Monitoring Service*.
+   ```plsql
+    RESP := DBMS_CLOUD.SEND_REQUEST(CREDENTIAL_NAME => 'OCI$RESOURCE_PRINCIPAL', 
+                                            URI => 'https://telemetry-ingestion.'|| ADB_REGION|| '.oraclecloud.com/20180401/metrics', 
+                                            METHOD =>DBMS_CLOUD.METHOD_POST, 
+                                            BODY => UTL_RAW.CAST_TO_RAW(OCI_POST_METRICS_BODY_JSON_OBJ.TO_STRING));
+    ```
+   `dbms_cloud.send_request` is an inbuilt PL/SQL stored procedure invoke any rest endpoint, preinstalled with every ADB. Here we are using it to invoke Oracle Cloud Monitoring Service REST API.
+  
+    Now we come to stored procedure `PUBLISH_BUFFERED_METRICS_TO_OCI`. It basically posts all buffered metrics to *Oracle Cloud Monitoring Service*, using all the functions and procedures we have discussed so far.
+    To be performant it creates batches of size `BATCH_SIZE_FOR_EACH_POST` of metric data-points for each *PostMetricsData API* invocation.
+
+   5. 
+
+   ```plsql
+   
+   ``` 
   
    
    
