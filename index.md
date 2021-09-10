@@ -1,4 +1,4 @@
-# Configuring Custom Metrics for Oracle Autonomous Database, by leveraging Oracle Cloud Monitoring Service
+# Emitting Custom Metrics from Oracle Autonomous Database, by leveraging Oracle Cloud Monitoring Service
 ## Introduction
 [Oracle Autonomous Database](https://www.oracle.com/autonomous-database/)(ADB) is revolutionizing how data is managed with the introduction of the world’s first "self-driving" database. ADB is powering critical business applications of enterprises, all over the world, as their primary data source.
 
@@ -8,53 +8,57 @@ These **customers want to collect, publish and analyse their own metrics, relate
 
 In this tutorial, I will showcase how easily we can publish custom metrics from your ADB service, with just a few lines of PL/SQL script and few clicks on OCI Console! We, at Oracle Cloud believe in meeting customers where they are in their cloud journey!
 
-This tutorial will use ecommerce shopping order database schema as an example; to showcase how we can compute, collect metrics on the this data. We will see how we can periodically compute metric representing count for each order-status(fullfilled, accepted, rejected etc) for each order that our ecommerece application receives. And finally we will post these custom metrics Oracle Cloud Monitoring Service.
+This tutorial will use ecommerce shopping order database schema as an example; to showcase how we can compute, collect metrics on this data. We will see how we can periodically compute metric representing count for each order-status(fulfilled, accepted, rejected etc.) for each order that our ecommerce application receives. And finally we will publish these custom metrics *Oracle Cloud Monitoring Service*.
 
-Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Service, on par with native metrics. You can analyse them with the same powerfull *Metrics Query Language* and setup Alarms on them to notify you whenever any event of interest or trouble happen.
+Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on par with native metrics. You can analyse them with the same powerful *Metrics Query Language* and setup *Alarms* on them to notify you whenever any event of interest or trouble happen.
 
 ## Prerequisites
 ### Infrastructure
 1. Access to Oracle cloud free tier or paid account.
 2. You can use any type of Oracle Autonomous Database Instance i.e.; shared or dedicated. 
 
-   For the tutorial though, Oracle Autonomous Transaction Processing(ATP) instance with just 1 OCPU and 1 TB of storage, is sufficient.
+   For the tutorial, we use Oracle Autonomous Database for Transaction Processing(ATP) instance, with just 1 OCPU and 1 TB of storage, on shared infrastructure. 
+   You can create it with Oracle cloud free tier account.
 
 ### Software Tools
 1. Basic PL/SQL familiarity.
-2. OCI Console familiarity.
-3. You can use any of Oracle DB clients like SQL Developer or SQL*Plus. If you are new to ADB please see [how to connect to ADB using Wallet](https://docs.oracle.com/en/cloud/paas/autonomous-data-warehouse-cloud/cswgs/autonomous-connect-sql-developer.html#GUID-14217939-3E8F-4782-BFF2-021199A908FD).  
-   For ATPs we also have [SQL Developer Web](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/sql-developer-web.html#GUID-C32A78E5-4C5F-476F-86AB-AEEEA9CF2704), available right from OCI Console page for ATP, with no need of wallet. 
-4. ADMIN user access to your ATP instance.
+2. Oracle Cloud Console familiarity.
+3. You can use any of Oracle DB clients like SQL Developer or SQL*Plus. 
+   If you are new to ATP please see [how to connect to ATP using Wallet](https://docs.oracle.com/en-us/iaas/Content/Database/Tasks/adbconnecting.htm#about).  
+   >For ATPs we also have [*SQL Developer Web*](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/sql-developer-web.html#GUID-C32A78E5-4C5F-476F-86AB-AEEEA9CF2704), 
+   available right from OCI Console page for ATP. There is no need of wallet when using *SQL Developer Web*. 
+4. `ADMIN` user access to your ATP instance.
 5. Basic familiarity with Oracle Cloud Concepts like [Monitoring Service](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Concepts/monitoringoverview.htm), [PostMetrics api for publishing custom metrics](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData) 
    & [Dynamic Groups and Resource Principals](https://docs.oracle.com/en-us/iaas/Content/Identity/Concepts/overview.htm).
 
 ## Solution at a glance:
 ![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_1_archi.png?raw=true)
->As shown above we will have simple PL/SQL script deployed in our ADB instance,  which is scheduled run periodically to compute, collect & post the custom metrics Oracle Monitoring Service. 
->>Additionally, ADB Service instance can be with private or public endpoint. Irrespective of that, the communication between ADB and Oracle Monitoring Service takes place on Oracle Cloud Network which is ultra fast and highly available. No need to setup Service Gateway.
+>As shown above we will have simple PL/SQL script deployed in our ADB instance,  which is scheduled run periodically to compute, collect & post the custom metrics Oracle Cloud Monitoring Service. 
+>>Additionally, ADB Service instance can be with private or public endpoint. Irrespective of that, the communication between ADB and Oracle Cloud Monitoring Service takes place on Oracle Cloud Network which is ultra-fast and highly available. No need to set up Service Gateway.
 
->>In this tutorial we are covering up-till getting the custom metrics from ADB to Oracle Monitoring Service.
+>>In this tutorial we are covering up-till getting the custom metrics from ADB to Oracle Cloud Monitoring Service.
 
 ## Overview of Steps
-1. Create Dynamic Group for your ADB instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
-2. Create new DB user/schema with requisite privileges in your ADB or update existing DB user/schema with requisite privileges.
+1. Create Dynamic Group for your ATP instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
+2. Create new DB user/schema with requisite privileges in your ATP or update existing DB user/schema with requisite privileges.
 3. Create table named `SHOPPING_ORDER`, for storing data for our example ecommerce app. 
 <br>We compute custom metrics on the customer-orders stored in this table.
-5. Run PL/SQL scripts to populate random data of customer-orders in `SHOPPING_ORDER` table.
-6. Schedule and run another PL/SQL script to compute, collect/buffer & post the custom metrics *Oracle Monitoring Service*.
+4. Run PL/SQL scripts to populate random data of customer-orders in `SHOPPING_ORDER` table.
+5. Schedule and run another PL/SQL script to compute, collect/buffer & post the custom metrics *Oracle Monitoring Service*.
+6. Observe the published custom metrics on *Oracle Cloud Web Console*.
 
 >   Needless to say, in production use-case you will have your own application doing the real world data population and updates. 
    Hence, steps 3 and 4 won't be needed in your production use-case.
 
 ## Detailed Steps:
-1. Create Dynamic Group for your ADB instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
-    1. Create Dynamic Group named `adb_dg` for your ADB instance(or instances), with the rule say as
+1. Create Dynamic Group for your ATP instance and authorize it to post metrics to *Oracle Cloud Monitoring Service* with policy.
+    1. Create Dynamic Group named `adb_dg` for your ATP instance(or instances), with the rule say as
 
        `ALL {resource.type = 'autonomousdatabase', resource.compartment.id = '<compartment OCID for your ADB instance>'}`
 
-       Alternatively you can just choose single ADB instance instead of all the instances in the compartment as
+       Alternatively you can just choose single ATP instance instead of all the instances in the compartment as
 
-        `ALL {resource.type = 'autonomousdatabase', resource.id = '<OCID for your ADB instance>'}`	 
+        `ALL {resource.type = 'autonomousdatabase', resource.id = '<OCID for your ATP instance>'}`	 
 
       ![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_2_dg.png?raw=true)
     2. Create OCI IAM policy to authorize the dynamic group ***adb_dg*** , to post metrics to *Oracle Cloud Monitoring Service* with policy named `adb_dg_policy`, with policy rules as </br>
@@ -64,12 +68,12 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
     ![width="80%"](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_3_policy.png?raw=true)
 
     Now your ATP Service(covered by definition of your dynamic group `adb_dg`) is authorized to post metrics in the same compartment!
-    >But no ATP DB user is yet authorized to publish metrics to *Oracle Cloud Monitoring Service*. Hence, effectively PL/SQL running on ADB can not still post any metrics to *Oracle Cloud Monitoring Service*. We will fix that in the steps, specifically 3.iii.
+    >But no ATP DB user is yet authorized to publish metrics to *Oracle Cloud Monitoring Service*. Hence, effectively PL/SQL running on ATP can not still post any metrics to *Oracle Cloud Monitoring Service*. We will fix that in the steps, specifically 3.iii.
 
    
-2. Create new DB user/schema with requisite privileges in your ADB or update existing DB user/schema with requisite privileges.
+2. Create new DB user/schema with requisite privileges in your ATP or update existing DB user/schema with requisite privileges.
 
-    1. Create new DB user/schema named `ECOMMERCE_USER` in your ADB. You can create this user as ADMIN user is created for every ADB instance. You can skip this step, if you choose to use existing user.
+    1. Create new DB user/schema named `ECOMMERCE_USER` in your ATP. You can create this user as ADMIN user is created for every ATP instance. You can skip this step, if you choose to use existing user.
    ```plsql
       CREATE USER ECOMMERCE_USER IDENTIFIED BY "Password of your choice for this User";
    ```
@@ -86,7 +90,7 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
       GRANT SELECT ON SYS.DBA_JOBS_RUNNING TO ECOMMERCE_USER;
    ```       
 
-    3. Enable Oracle DB credential for Oracle Cloud Resource Principal and give its access to db-user ECOMMERCE_USER. This basically connect the dyanmic group ***adb_dg*** we created in step 1 to our DB user ***ECOMMERCE_USER***, giving it the authorization to post metrics to *Oracle Cloud Monitoring Service*. For details, refer [Oracle Cloud Resource Principle For Autonomous Databases](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/resource-principal.html).
+    3. Enable Oracle DB credential for Oracle Cloud Resource Principal and give its access to db-user ECOMMERCE_USER. This basically connect the *dynamic group* `adb_dg` we created in step 1 to our DB user `ECOMMERCE_USER`, giving it the authorization to post metrics to *Oracle Cloud Monitoring Service*. For details, refer [Oracle Cloud Resource Principle For Autonomous Databases](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/resource-principal.html).
 
     ```plsql
      EXEC DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL(username => 'ECOMMERCE_USER');
@@ -140,8 +144,9 @@ Custom metrics metrics are first class citizens of Oracle Cloud Monitoring Servi
    PROCESSED, NOT_FULFILLED]`.
 
 
-4. Read through the following PL/SQL script. It has all the necessary stored procedures to populate data in ***SHOPPING_ORDER*** table. The script will keep on first adding 10000 rows into ***SHOPPING_ORDER*** table with random data and then it will update the same data.
-Script will run approximately for 15 minutes on ATP with 1 OCPU and 1TB storage.   
+4. Read through the following PL/SQL script. It populates data in `SHOPPING_ORDER` table. </br>
+   The script will keep on first adding 10000 rows into `SHOPPING_ORDER` table with random data, and then it will update the same data.
+   Script will run approximately for 15 minutes on ATP with 1 OCPU and 1TB storage.   
    ```plsql
     CREATE OR REPLACE PROCEDURE POPULATE_DATA_FEED IS
         ARR_STATUS_RANDOM_INDEX      INTEGER;
@@ -207,9 +212,10 @@ Script will run approximately for 15 minutes on ATP with 1 OCPU and 1TB storage.
     SELECT STATUS,count(*) FROM SHOPPING_ORDER GROUP BY STATUS;   
    ```
 
-5. Now let us dive deep into actual crux of this tutorial: script which computes the custom metrics and publishes it to Oracle Cloud Monitoring Service.
-   We will analyse the script piecemeal.
-   1. We create table `SHOPPING_ORDER_METRICS_TABLE` and use it to collect/buffer computed metrics.
+5. Let us dive deep into actual crux of this tutorial: script which computes the custom metrics and publishes it to *Oracle Cloud Monitoring Service*.
+   The script is idempotent to make sure you can play with it multiple runs. 
+   Now, we will analyse the script piecemeal.
+   1. We create table `SHOPPING_ORDER_METRICS_TABLE` and use it to collect/buffer computed metrics. 
    
    ```plsql
     DECLARE
@@ -232,8 +238,8 @@ Script will run approximately for 15 minutes on ATP with 1 OCPU and 1TB storage.
     /
    ```
 
-   2. Now let us create a stored procedure which computes the metric: Count for number of Orders by Status values. 
-      It then buffers the computed metrics in our buffer table `SHOPPING_ORDER_METRICS_TABLE` created in previous step.
+   2. Let us create a stored procedure which computes the metric: *Count for number of Orders by Status values, at the time instance of this metrics collection*.</br> 
+      The stored procedure then buffers the computed metrics in our buffer table `SHOPPING_ORDER_METRICS_TABLE` created in previous step.
       We buffer to make sure, in-case of temporary interruption when publishing the metrics to *Oracle Cloud Monitoring Service*, we can retry posting them again in the future.
 
    ```plsql
@@ -255,12 +261,12 @@ Script will run approximately for 15 minutes on ATP with 1 OCPU and 1TB storage.
    ```
       In order to limit the size of buffer table, we trim it, if its size crosses 1000 rows.
 
-   3. Now we need function which converts buffered metrics from `SHOPPING_ORDER_METRICS_TABLE` into JSON objects that [PostMetricsData API](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData) expects in its request.
+   3. We now need function which converts buffered metrics from `SHOPPING_ORDER_METRICS_TABLE` into JSON objects that [PostMetricsData API](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData) expects in its request.
       This is exactly what PL/SQL function `PREPARE_JSON_OBJECT_FROM_METRIC_ROWS` performs. 
       This function converts `BATCH_SIZE_FOR_EACH_POST` number of recent most metrics data-points from `SHOPPING_ORDER_METRICS_TABLE` into `OCI_METADATA_JSON_OBJ JSON_OBJECT_T`.
       
       `OCI_METADATA_JSON_OBJ` is variable of PL/SQL inbuilt JSON datatype `JSON_OBJECT_T`. 
-      We have constructed `OCI_METADATA_JSON_OBJ` with same JSON structure as per [PostMetricDataDetails](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails), request body for PostMetricsData API. 
+      We have constructed `OCI_METADATA_JSON_OBJ` with same JSON structure as per [PostMetricDataDetails](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails), the request body for PostMetricsData API. 
 
    ```plsql
     CREATE OR REPLACE FUNCTION GET_METRIC_DATA_DETAILS_JSON_OBJ (
@@ -296,9 +302,11 @@ Script will run approximately for 15 minutes on ATP with 1 OCPU and 1TB storage.
         METRIC_DATA_DETAILS.PUT('dimensions', MDD_DIMENSIONS);
 
         -- namespace, resourceGroup and name for the custom metric are arbitrary values, as per choice of developer
-        METRIC_DATA_DETAILS.PUT('namespace', 'adb_custom_metrics_111');
-        METRIC_DATA_DETAILS.PUT('resourceGroup', 'adb_eco_group');
+        METRIC_DATA_DETAILS.PUT('namespace', 'custom_metrics_from_adb');
+        METRIC_DATA_DETAILS.PUT('resourceGroup', 'ecommerece_atp');
         METRIC_DATA_DETAILS.PUT('name', 'order_status');
+       
+        -- since compartment OCID is fetched using ADB metadata, our custom metrics will land up in same compartment as our ADB
         METRIC_DATA_DETAILS.PUT('compartmentId', IN_METRIC_CMPT_ID);
         RETURN METRIC_DATA_DETAILS;
     END;
@@ -417,7 +425,7 @@ Script will run approximately for 15 minutes on ATP with 1 OCPU and 1TB storage.
         WHILE(TRUE) LOOP
             SELECT COUNT(*) INTO TOTAL_METRICS_STREAM_CNT FROM SHOPPING_ORDER_METRICS_TABLE;
             IF(TOTAL_METRICS_STREAM_CNT < BATCH_SIZE_FOR_EACH_POST) THEN
-                DBMS_OUTPUT.PUT_LINE('Less than '||BATCH_SIZE_FOR_EACH_POST||' Metric-datapoints in buffer:'|| TOTAL_METRICS_STREAM_CNT || ', hence not publishing, waiting for buffer to fill up');
+                DBMS_OUTPUT.PUT_LINE('Only ' || TOTAL_METRICS_STREAM_CNT || ' metrics datapoints buffered(less than batch size' || BATCH_SIZE_FOR_EACH_POST || '), hence waiting for buffer to fill up');
                 EXIT;
             END IF;   
 
@@ -455,14 +463,35 @@ Script will run approximately for 15 minutes on ATP with 1 OCPU and 1TB storage.
     ```
    `dbms_cloud.send_request` is an inbuilt PL/SQL stored procedure invoke any rest endpoint, preinstalled with every ADB. Here we are using it to invoke Oracle Cloud Monitoring Service REST API.
   
-    Now we come to stored procedure `PUBLISH_BUFFERED_METRICS_TO_OCI`. It basically posts all buffered metrics to *Oracle Cloud Monitoring Service*, using all the functions and procedures we have discussed so far.
-    To be performant it creates batches of size `BATCH_SIZE_FOR_EACH_POST` of metric data-points for each *PostMetricsData API* invocation.
-
-   5. 
+   Next we come to stored procedure `PUBLISH_BUFFERED_METRICS_TO_OCI`. It basically posts all buffered metrics to *Oracle Cloud Monitoring Service*, using all the functions and procedures we have discussed so far.
+   To be performant it creates batches of size `BATCH_SIZE_FOR_EACH_POST` of metric data-points for each *PostMetricsData API* invocation.</br>
+   5. All that now is remaining is creating scheduled run our metrics computation and publishing to *Oracle Cloud Monitoring Service*.</br>
+      We do it as follows with PL/SQL built-in stored procedure `DBMS_SCHEDULER.CREATE_JOB`. We are making it run for only 1200 seconds for this example, for production use-case configure it as per your needs.
 
    ```plsql
-   
+    BEGIN
+        DBMS_SCHEDULER.CREATE_JOB(
+        JOB_NAME => 'POST_METRICS_TO_OCI_JOB', 
+        JOB_TYPE   => 'PLSQL_BLOCK',
+        JOB_ACTION => 'BEGIN 
+                        ECOMMERCE_USER.COMPUTE_AND_BUFFER_METRICS(); 
+                        ECOMMERCE_USER.PUBLISH_BUFFERED_METRICS_TO_OCI();
+                    END;',
+        START_DATE => SYSTIMESTAMP, 
+        REPEAT_INTERVAL => 'FREQ=SECONDLY;INTERVAL=60', /* every 60th second */
+        END_DATE => SYSTIMESTAMP + INTERVAL '1200' SECOND,  /* in production prefer end_date instead or skip it alltogether */
+        AUTO_DROP => TRUE, ENABLED => TRUE, 
+        COMMENTS => 'JOB TO POST DB METRICS TO OCI MONITORING SERVICE, RUNS EVERY 10TH SECOND');
+    END;
+    /   
    ``` 
+
+6. Observe the published custom metrics on *Oracle Cloud Web Console*. 
+   1. From the hamburger menu click *Metrics Explorer* as shown below.
+   
+   2. Choose from the UI metrics namespace as ``, resourceGroup `` we have set for custom metrics. As you can see, all the metadata and dimensions we have set for custom metrics are available for us.
+      You can construct *MQL* queries to analyse these metrics, as per your needs and use-case. Next you might like to setup [Oracle Cloud Alarms]() on these metric stream, to alert your Ops team, whenever an event of interest or concern take place.
+      
   
    
    
