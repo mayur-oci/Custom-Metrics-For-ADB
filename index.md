@@ -20,7 +20,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
    For the tutorial, we use Oracle Autonomous Database for Transaction Processing(ATP) instance, with just 1 OCPU and 1 TB of storage, on shared infrastructure. 
    You can create it with Oracle cloud free tier account.
 
-### Software Tools
+### Other
 1. Basic PL/SQL familiarity.
 2. Oracle Cloud Console familiarity.
 3. You can use any of Oracle DB clients like SQL Developer or SQL*Plus. 
@@ -303,7 +303,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
 
         -- namespace, resourceGroup and name for the custom metric are arbitrary values, as per choice of developer
         METRIC_DATA_DETAILS.PUT('namespace', 'custom_metrics_from_adb');
-        METRIC_DATA_DETAILS.PUT('resourceGroup', 'ecommerece_atp');
+        METRIC_DATA_DETAILS.PUT('resourceGroup', 'ecommerece_adb');
         METRIC_DATA_DETAILS.PUT('name', 'order_status');
        
         -- since compartment OCID is fetched using ADB metadata, our custom metrics will land up in same compartment as our ADB
@@ -490,7 +490,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
 6. Observe the published custom metrics on *Oracle Cloud Web Console*. 
    1. From the hamburger menu click *Metrics Explorer* as shown below.
    
-   2. Choose from the UI metrics namespace as `custom_metrics_from_adb`, resourceGroup as `ecommerece_atp` and metric name as `order_status` we have set for custom metrics. As you can see, all the metadata and dimensions we have set for custom metrics are available for us.
+   2. Choose from the UI metrics namespace as `custom_metrics_from_adb`, resourceGroup as `ecommerece_adb` and metric name as `order_status` we have set for custom metrics. </br>As you can see, all the metadata and dimensions we have set for custom metrics are available for us.
       You can construct *MQL* queries to analyse these metrics, as per your needs and use-case. Next you might like to setup [Oracle Cloud Alarms](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Tasks/managingalarms.htm) on these metric stream, to alert your Ops team, whenever an event of interest or concern take place.
       This automates the Observability loop for your ADB metrics of your choice!
       
