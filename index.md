@@ -1,4 +1,4 @@
-# Emitting Custom Metrics from Oracle Autonomous Database, by leveraging Oracle Cloud Monitoring Service
+# Publishing Custom Metrics from Oracle Autonomous Database, by leveraging Oracle Cloud Monitoring Service
 ## Introduction
 [Oracle Autonomous Database](https://www.oracle.com/autonomous-database/)(ADB) is revolutionizing how data is managed with the introduction of the world’s first "self-driving" database. ADB is powering critical business applications of enterprises, all over the world, as their primary data source.
 
@@ -480,7 +480,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
                     END;',
         START_DATE => SYSTIMESTAMP, 
         REPEAT_INTERVAL => 'FREQ=SECONDLY;INTERVAL=60', /* every 60th second */
-        END_DATE => SYSTIMESTAMP + INTERVAL '1200' SECOND,  /* in production prefer end_date instead or skip it alltogether */
+        END_DATE => SYSTIMESTAMP + INTERVAL '1200' SECOND,
         AUTO_DROP => TRUE, ENABLED => TRUE, 
         COMMENTS => 'JOB TO POST DB METRICS TO OCI MONITORING SERVICE, RUNS EVERY 10TH SECOND');
     END;
@@ -490,8 +490,9 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
 6. Observe the published custom metrics on *Oracle Cloud Web Console*. 
    1. From the hamburger menu click *Metrics Explorer* as shown below.
    
-   2. Choose from the UI metrics namespace as ``, resourceGroup `` we have set for custom metrics. As you can see, all the metadata and dimensions we have set for custom metrics are available for us.
-      You can construct *MQL* queries to analyse these metrics, as per your needs and use-case. Next you might like to setup [Oracle Cloud Alarms]() on these metric stream, to alert your Ops team, whenever an event of interest or concern take place.
+   2. Choose from the UI metrics namespace as `custom_metrics_from_adb`, resourceGroup as `ecommerece_atp` and metric name as `order_status` we have set for custom metrics. As you can see, all the metadata and dimensions we have set for custom metrics are available for us.
+      You can construct *MQL* queries to analyse these metrics, as per your needs and use-case. Next you might like to setup [Oracle Cloud Alarms](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Tasks/managingalarms.htm) on these metric stream, to alert your Ops team, whenever an event of interest or concern take place.
+      This automates the Observability loop for your ADB metrics of your choice!
       
   
    
