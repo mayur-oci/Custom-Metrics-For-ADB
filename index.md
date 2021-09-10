@@ -464,7 +464,8 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
    `dbms_cloud.send_request` is an inbuilt PL/SQL stored procedure invoke any rest endpoint, preinstalled with every ADB. Here we are using it to invoke Oracle Cloud Monitoring Service REST API.
   
    Next we come to stored procedure `PUBLISH_BUFFERED_METRICS_TO_OCI`. It basically posts all buffered metrics to *Oracle Cloud Monitoring Service*, using all the functions and procedures we have discussed so far.
-   To be performant it creates batches of size `BATCH_SIZE_FOR_EACH_POST` of metric data-points for each *PostMetricsData API* invocation.</br>
+   To be performant it creates batches of size `BATCH_SIZE_FOR_EACH_POST` of metric data-points for each *PostMetricsData API* invocation.
+
    5. All that now is remaining is creating scheduled run our metrics computation and publishing to *Oracle Cloud Monitoring Service*.</br>
       We do it as follows with PL/SQL built-in stored procedure `DBMS_SCHEDULER.CREATE_JOB`. We are making it run for only 1200 seconds for this example, for production use-case configure it as per your needs.
 
