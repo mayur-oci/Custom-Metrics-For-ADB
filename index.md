@@ -15,9 +15,8 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
 ## Prerequisites
 ### Infrastructure
 1. Access to Oracle cloud free tier or paid account.
-2. You can use any type of Oracle Autonomous Database Instance i.e.; shared or dedicated. 
-
-   For the tutorial, we use Oracle Autonomous Database for Transaction Processing(ATP) instance, with just 1 OCPU and 1 TB of storage, on shared infrastructure. 
+2. You can use any type of Oracle Autonomous Database Instance i.e.; shared or dedicated.
+   > For the tutorial, we use Oracle Autonomous Database for Transaction Processing(ATP) instance, with just 1 OCPU and 1 TB of storage, on shared infrastructure. 
    You can create it with Oracle cloud free tier account.
 
 ### Other
@@ -25,7 +24,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
 2. Oracle Cloud Console familiarity.
 3. You can use any of Oracle DB clients like SQL Developer or SQL*Plus. 
    If you are new to ATP please see [how to connect to ATP using Wallet](https://docs.oracle.com/en-us/iaas/Content/Database/Tasks/adbconnecting.htm#about).  
-   >For ATPs we also have [*SQL Developer Web*](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/sql-developer-web.html#GUID-C32A78E5-4C5F-476F-86AB-AEEEA9CF2704), 
+   > For ATPs we also have [*SQL Developer Web*](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/sql-developer-web.html#GUID-C32A78E5-4C5F-476F-86AB-AEEEA9CF2704), 
    available right from OCI Console page for ATP. There is no need of wallet when using *SQL Developer Web*. 
 4. `ADMIN` user access to your ATP instance.
 5. Basic familiarity with Oracle Cloud Concepts like [Monitoring Service](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Concepts/monitoringoverview.htm), [PostMetrics api for publishing custom metrics](https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/MetricData/PostMetricData) 
@@ -448,6 +447,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
   
    Next we come to stored procedure `PUBLISH_BUFFERED_METRICS_TO_OCI`. It basically posts all buffered metrics to *Oracle Cloud Monitoring Service*, using all the functions and procedures we have discussed so far.
    To be performant it creates batches of size `BATCH_SIZE_FOR_EACH_POST` of metric data-points for each *PostMetricsData API* invocation.
+
 
 6. All that now is remaining is creating scheduled run our metrics computation and publishing to *Oracle Cloud Monitoring Service*.</br>
    We do it as follows with PL/SQL built-in stored procedure `DBMS_SCHEDULER.CREATE_JOB`. We are making it run for only 1200 seconds for this example, for production use-case configure it as per your needs.
