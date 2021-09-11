@@ -43,9 +43,10 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
 2. Create new DB user/schema with requisite privileges in your ATP or update existing DB user/schema with requisite privileges.
 3. Create table named `SHOPPING_ORDER`, for storing data for our example ecommerce app. 
 <br>We compute custom metrics on the customer-orders stored in this table.
-4. Run PL/SQL scripts to populate random data of customer-orders in `SHOPPING_ORDER` table.
-5. Schedule and run another PL/SQL script to compute, collect/buffer & post the custom metrics *Oracle Monitoring Service*.
-6. Observe the published custom metrics on *Oracle Cloud Web Console*.
+4. Peruse PL/SQL script to populate random data of customer-orders in `SHOPPING_ORDER` table.
+5. Peruse PL/SQL script to compute, collect/buffer & post the custom metrics *Oracle Monitoring Service*.
+6. Schedule and run scripts from step 4 & 5.
+7. Observe the published custom metrics on *Oracle Cloud Web Console*.
 
 >   Needless to say, in production use-case you will have your own application doing the real world data population and updates. 
    Hence, steps 3 and 4 won't be needed in your production use-case.
@@ -131,7 +132,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
             PARTITION OUT_FOR_DELIVERY VALUES ( 'OUT_FOR_DELIVERY' ),
             PARTITION ORDER_DROPPED_NO_INVENTORY VALUES ( 'ORDER_DROPPED_NO_INVENTORY' ),
             PARTITION PROCESSED VALUES ( 'PROCESSED' ),
-            PARTITION NOT_FULLFILLED VALUES ( 'NOT_FULLFILLED' )
+            PARTITION NOT_FULLFILLED VALUES ( 'NOT_FULFILLED' )
         );
     /
    
@@ -156,7 +157,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
                                         'SHIPPED', 'ABORTED', 'OUT_FOR_DELIVERY',
                                         'ORDER_DROPPED_NO_INVENTORY', 
                                         'PROCESSED', 'NOT_FULFILLED');
-        TOTAL_ROWS_IN_SHOPPING_ORDER INTEGER := 10000;
+        TOTAL_ROWS_IN_SHOPPING_ORDER INTEGER := 15000;
         TYPE ROWID_NT IS TABLE OF ROWID;
         ROWIDS                       ROWID_NT;
     BEGIN     
@@ -175,7 +176,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
         DBMS_OUTPUT.PUT_LINE('DONE WITH INITIAL DATA LOAD');
 
         -- keep on updating the same data
-        FOR COUNTER IN 1..7000 LOOP        
+        FOR COUNTER IN 1..8000 LOOP        
                 
                 --Get the rowids
             SELECT R BULK COLLECT INTO ROWIDS FROM (SELECT ROWID R FROM SHOPPING_ORDER SAMPLE ( 5 ) ORDER BY DBMS_RANDOM.VALUE) RNDM
@@ -196,20 +197,6 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
         EXECUTE IMMEDIATE 'ANALYZE TABLE SHOPPING_ORDER COMPUTE STATISTICS';
     END;
     /
-
-    -- we schedule the data feed since we want it to run right now but asychronously
-    BEGIN
-        DBMS_SCHEDULER.CREATE_JOB(JOB_NAME => 'POPULATE_DATA_FEED_JOB', 
-                                JOB_TYPE => 'STORED_PROCEDURE', 
-                                JOB_ACTION => 'POPULATE_DATA_FEED',
-                                ENABLED => TRUE, 
-                                AUTO_DROP => TRUE, -- drop job after 1 run.
-                                COMMENTS => 'ONE-TIME JOB');
-    END;
-    /
-       
-    -- just for our information
-    SELECT STATUS,count(*) FROM SHOPPING_ORDER GROUP BY STATUS;   
    ```
 
 5. Let us dive deep into actual crux of this tutorial: script which computes the custom metrics and publishes it to *Oracle Cloud Monitoring Service*.
@@ -283,12 +270,12 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
         MDD_DATAPOINT       JSON_OBJECT_T;
     BEGIN
         MDD_METADATA := JSON_OBJECT_T();
-        MDD_METADATA.PUT('unit', 'TOTAL_ROW_COUNT'); -- metric unit is arbitrary, as per choice of developer
+        MDD_METADATA.PUT('unit', 'row_count'); -- metric unit is arbitrary, as per choice of developer
 
         MDD_DIMENSIONS := JSON_OBJECT_T();
         MDD_DIMENSIONS.PUT('dbname', IN_ADB_NAME);
         MDD_DIMENSIONS.PUT('schema_name', SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA'));
-        MDD_DIMENSIONS.PUT('table_name', 'SHOPPING_ORDER_BUFFER');
+        MDD_DIMENSIONS.PUT('table_name', 'SHOPPING_ORDER');
         MDD_DIMENSIONS.PUT('status_enum', IN_ORDER_STATUS);
         MDD_DATAPOINT := JSON_OBJECT_T();
         MDD_DATAPOINT.PUT('timestamp', IN_TS_METRIC_COLLECTION); --timestamp value RFC3339 compliant
@@ -304,7 +291,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
         -- namespace, resourceGroup and name for the custom metric are arbitrary values, as per choice of developer
         METRIC_DATA_DETAILS.PUT('namespace', 'custom_metrics_from_adb');
         METRIC_DATA_DETAILS.PUT('resourceGroup', 'ecommerece_adb');
-        METRIC_DATA_DETAILS.PUT('name', 'order_status');
+        METRIC_DATA_DETAILS.PUT('name', 'customer_orders_submitted');
        
         -- since compartment OCID is fetched using ADB metadata, our custom metrics will land up in same compartment as our ADB
         METRIC_DATA_DETAILS.PUT('compartmentId', IN_METRIC_CMPT_ID);
@@ -318,7 +305,6 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
         OCI_POST_METRICS_BODY_JSON_OBJ JSON_OBJECT_T;
         ARR_METRIC_DATA                JSON_ARRAY_T;
         METRIC_DATA_DETAILS            JSON_OBJECT_T;
-        PRETTY_JSON                    CLOB;
     BEGIN
         -- prepare JSON body for postmetrics api..
         -- for details please refer https://docs.oracle.com/en-us/iaas/api/#/en/monitoring/20180401/datatypes/PostMetricDataDetails
@@ -344,9 +330,6 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
         DBMS_OUTPUT.PUT_LINE('done with for loop ');
         OCI_POST_METRICS_BODY_JSON_OBJ := JSON_OBJECT_T();
         OCI_POST_METRICS_BODY_JSON_OBJ.PUT('metricData', ARR_METRIC_DATA);
-
-        --SELECT json_serialize ((OCI_POST_METRICS_BODY_JSON_OBJ.to_clob()) returning CLOB pretty) INTO PRETTY_JSON FROM DUAL;
-        --DBMS_OUTPUT.PUT_LINE(PRETTY_JSON);
 
         RETURN OCI_POST_METRICS_BODY_JSON_OBJ;
     END;
@@ -466,10 +449,24 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
    Next we come to stored procedure `PUBLISH_BUFFERED_METRICS_TO_OCI`. It basically posts all buffered metrics to *Oracle Cloud Monitoring Service*, using all the functions and procedures we have discussed so far.
    To be performant it creates batches of size `BATCH_SIZE_FOR_EACH_POST` of metric data-points for each *PostMetricsData API* invocation.
 
-   5. All that now is remaining is creating scheduled run our metrics computation and publishing to *Oracle Cloud Monitoring Service*.</br>
-      We do it as follows with PL/SQL built-in stored procedure `DBMS_SCHEDULER.CREATE_JOB`. We are making it run for only 1200 seconds for this example, for production use-case configure it as per your needs.
+6. All that now is remaining is creating scheduled run our metrics computation and publishing to *Oracle Cloud Monitoring Service*.</br>
+   We do it as follows with PL/SQL built-in stored procedure `DBMS_SCHEDULER.CREATE_JOB`. We are making it run for only 1200 seconds for this example, for production use-case configure it as per your needs.
 
    ```plsql
+       -- we schedule the data feed since we want it to run right now but asychronously
+    BEGIN
+        DBMS_SCHEDULER.CREATE_JOB(JOB_NAME => 'POPULATE_DATA_FEED_JOB', 
+                                JOB_TYPE => 'STORED_PROCEDURE', 
+                                JOB_ACTION => 'POPULATE_DATA_FEED',
+                                ENABLED => TRUE, 
+                                AUTO_DROP => TRUE, -- drop job after 1 run.
+                                COMMENTS => 'ONE-TIME JOB');
+    END;
+    /
+       
+    -- just for our information
+    SELECT STATUS,count(*) FROM SHOPPING_ORDER GROUP BY STATUS;   
+   
     BEGIN
         DBMS_SCHEDULER.CREATE_JOB(
         JOB_NAME => 'POST_METRICS_TO_OCI_JOB', 
@@ -477,7 +474,7 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
         JOB_ACTION => 'BEGIN 
                         ECOMMERCE_USER.COMPUTE_AND_BUFFER_METRICS(); 
                         ECOMMERCE_USER.PUBLISH_BUFFERED_METRICS_TO_OCI();
-                    END;',
+                       END;',
         START_DATE => SYSTIMESTAMP, 
         REPEAT_INTERVAL => 'FREQ=SECONDLY;INTERVAL=60', /* every 60th second */
         END_DATE => SYSTIMESTAMP + INTERVAL '1200' SECOND,
@@ -487,12 +484,13 @@ Custom metrics are first class citizens of Oracle Cloud Monitoring Service, on p
     /   
    ``` 
 
-6. Observe the published custom metrics on *Oracle Cloud Web Console*. 
+6. Explore the published custom metrics on *Oracle Cloud Web Console*. 
    1. From the hamburger menu click *Metrics Explorer* as shown below.
-   
-   2. Choose from the UI metrics namespace as `custom_metrics_from_adb`, resourceGroup as `ecommerece_adb` and metric name as `order_status` we have set for custom metrics. </br>As you can see, all the metadata and dimensions we have set for custom metrics are available for us.
-      You can construct *MQL* queries to analyse these metrics, as per your needs and use-case. Next you might like to setup [Oracle Cloud Alarms](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Tasks/managingalarms.htm) on these metric stream, to alert your Ops team, whenever an event of interest or concern take place.
+   ![Go Metrics Explorer on OCI Console](https://github.com/mayur-oci/Custom-Metrics-For-ADB/blob/main/images/FindMetricsExplorer.png?raw=true)
+   2. Choose from the *Metrics Explorer* namespace as `custom_metrics_from_adb`, resourceGroup as `ecommerece_adb` and metric name as `customer_orders_submitted` we have set for custom metrics. </br>As you can see, all the metadata and dimensions we have set for custom metrics are available for us.
+      You can construct *MQL* queries to analyse these metrics, as per your needs and use-case. Next you might like to set up [Oracle Cloud Alarms](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Tasks/managingalarms.htm) on these metric stream, to alert your Ops team, whenever an event of interest or concern take place.
       This automates the Observability loop for your ADB metrics of your choice!
+   ![](https://github.com/mayur-oci/Custom-Metrics-For-ADB/blob/main/images/CustomMetricExplore.png?raw=true "Explore Your Custom Metrics you have published")
       
   
    
