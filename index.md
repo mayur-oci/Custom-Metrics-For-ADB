@@ -103,9 +103,8 @@ This tutorial will use ecommerce shopping order database schema as an example; t
      SELECT * from DBA_TAB_PRIVS WHERE DBA_TAB_PRIVS.GRANTEE='ECOMMERCE_USER';
     ```
    
-3. Create example data table `SHOPPING_ORDER` to showcase computation of metrics on a database tables. 
-
-   The table schema is self-explanatory but please take a note status column.
+3. Create example data table `SHOPPING_ORDER` to showcase computation of metrics on a database tables.</br>
+   The table schema is self-explanatory but please take a note `STATUS` column.
 
    ```plsql
     DROP TABLE SHOPPING_ORDER;
