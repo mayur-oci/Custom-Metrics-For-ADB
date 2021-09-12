@@ -446,7 +446,7 @@ This tutorial will use ecommerce shopping order database schema as an example; t
    To be performant it creates batches of size `BATCH_SIZE_FOR_EACH_POST` of metric data-points for each *PostMetricsData API* invocation.
 
 
-6. Schedule and run scripts from step 4 & 5.
+6. Schedule and run scripts from step 4 & 5. In steps 4 & 5, we have only defined stored procedures and functions in the Oracle DB, we have not yet executed them.
    1. We need to run the script from step 4 to populate the data in `SHOPPING_ORDER` table. Script will run approximately for 15 minutes on ATP with 1 OCPU and 1TB storage.
       
    ```plsql
