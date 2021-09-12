@@ -79,25 +79,23 @@ This tutorial will use ecommerce shopping order database schema as an example; t
 
     2. Grant requisite Oracle Database related privileges to the `ECOMMERCE_USER`.
    ```plsql
-      GRANT CREATE TABLE, ALTER ANY INDEX, CREATE PROCEDURE, CREATE JOB, 
-              SELECT ANY TABLE, EXECUTE ANY PROCEDURE, 
-              UPDATE ANY TABLE, CREATE SESSION,
-              UNLIMITED TABLESPACE, CONNECT, RESOURCE TO ECOMMERCE_USER;
-      GRANT SELECT ON "SYS"."V_$PDBS" TO ECOMMERCE_USER;
-      GRANT EXECUTE ON "C##CLOUD$SERVICE"."DBMS_CLOUD" to ECOMMERCE_USER;
-      GRANT SELECT ON SYS.DBA_JOBS_RUNNING TO ECOMMERCE_USER;
+      GRANT  CREATE TABLE, ALTER ANY INDEX, CREATE PROCEDURE, CREATE JOB, 
+             SELECT ANY TABLE, EXECUTE ANY PROCEDURE, 
+             UPDATE ANY TABLE, CREATE SESSION,
+             UNLIMITED TABLESPACE, CONNECT, RESOURCE TO ECOMMERCE_USER;
+      GRANT  SELECT ON "SYS"."V_$PDBS" TO ECOMMERCE_USER;
+      GRANT  EXECUTE ON "C##CLOUD$SERVICE"."DBMS_CLOUD" to ECOMMERCE_USER;
+      GRANT  SELECT ON SYS.DBA_JOBS_RUNNING TO ECOMMERCE_USER;
    ```       
 
     3. Enable Oracle DB credential for Oracle Cloud Resource Principal and give its access to db-user ECOMMERCE_USER. This basically connect the *dynamic group* `adb_dg` we created in step 1 to our DB user `ECOMMERCE_USER`, giving it the authorization to post metrics to *Oracle Cloud Monitoring Service*. For details, refer [Oracle Cloud Resource Principle For Autonomous Databases](https://docs.oracle.com/en/cloud/paas/autonomous-database/adbsa/resource-principal.html).
-
-    ```plsql
+    
+   ```plsql
      EXEC DBMS_CLOUD_ADMIN.ENABLE_RESOURCE_PRINCIPAL(username => 'ECOMMERCE_USER');
-     ```
+   ```
  
    4. This step is optional and here we just verify the operations we did in previous step.
-    Please note the Oracle DB credential corresponding to Oracle Cloud Resource Principal once enabled, is always owned by ADMIN user for ADB.  
-    You can verify the same as follows.
-      
+      Please note the Oracle DB credential corresponding to Oracle Cloud Resource Principal once enabled, is always owned by ADMIN user for ADB. You can verify the same as follows.
     ```plsql
      SELECT OWNER, CREDENTIAL_NAME FROM DBA_CREDENTIALS WHERE CREDENTIAL_NAME =  'OCI$RESOURCE_PRINCIPAL'  AND OWNER =  'ADMIN';
        
