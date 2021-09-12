@@ -196,8 +196,8 @@ This tutorial will use ecommerce shopping order database schema as an example; t
 5. Let us dive deep into actual crux of this tutorial: script which computes the custom metrics and publishes it to *Oracle Cloud Monitoring Service*.
    The script is idempotent to make sure you can play with it multiple runs. 
    Now, we will analyse the script piecemeal.
-   1. We create table `SHOPPING_ORDER_METRICS_TABLE` and use it to collect/buffer computed metrics.
-   > Make sure your data tables are optimized for queries running metrics computation. You do not want these queries putting to load on your database, disturbing your production use-cases.
+   1. We create table `SHOPPING_ORDER_METRICS_TABLE` and use it to collect/buffer computed metrics.</br>
+   Make sure your data tables are optimized for queries running metrics computation. You do not want these queries putting to load on your database, disturbing your production use-cases.
 
    ```plsql
     DECLARE
