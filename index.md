@@ -197,6 +197,7 @@ This tutorial will use ecommerce shopping order database schema as an example; t
    The script is idempotent to make sure you can play with it multiple runs. 
    Now, we will analyse the script piecemeal.
    1. We create table `SHOPPING_ORDER_METRICS_TABLE` and use it to collect/buffer computed metrics.</br>
+   > Make sure your data tables are optimized for queries running metrics computation. You do not want these queries putting to load on your database, disturbing your production use-cases.
 
    ```plsql
     DECLARE
@@ -219,7 +220,6 @@ This tutorial will use ecommerce shopping order database schema as an example; t
     /
    ```
    
-   > Make sure your data tables are optimized for queries running metrics computation. You do not want these queries putting to load on your database, disturbing your production use-cases.
 
    2. Let us create a stored procedure which computes the metric: *Count for number of Orders by Status values, at the time instance of this metrics collection*.</br> 
       The stored procedure then buffers the computed metrics in our buffer table `SHOPPING_ORDER_METRICS_TABLE` created in previous step.
