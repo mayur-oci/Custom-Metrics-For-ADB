@@ -491,11 +491,11 @@ This tutorial will use ecommerce shopping order database schema as an example; t
 
 8. Explore the published custom metrics on *Oracle Cloud Web Console*. 
    1. From the hamburger menu click *Metrics Explorer* as shown below.
-   ![Go Metrics Explorer on OCI Console](https://github.com/mayur-oci/Custom-Metrics-For-ADB/blob/main/images/FindMetricsExplorer.png?raw=true)
+   ![](/images/FindMetricsExplorer.png "Go Metrics Explorer on OCI Console")
    2. Choose from the *Metrics Explorer* namespace as `custom_metrics_from_adb`, resourceGroup as `ecommerece_adb` and metric name as `customer_orders_submitted` we have set for custom metrics. </br>As you can see, all the metadata and dimensions we have set for custom metrics are available for us.
       You can construct *MQL* queries to analyse these metrics, as per your needs and use-case. Next you might like to set up [Oracle Cloud Alarms](https://docs.oracle.com/en-us/iaas/Content/Monitoring/Tasks/managingalarms.htm) on these metric stream, to alert your Ops team.
       This automates the Observability loop for your ADB metrics of your choice!
-   ![](https://github.com/mayur-oci/Custom-Metrics-For-ADB/blob/main/images/CustomMetricExplore.png?raw=true "Explore Your Custom Metrics you have published")
+   ![](/images/CustomMetricExplore.png "Explore Your Custom Metrics you have published")
 
 
 ## Conclusion
