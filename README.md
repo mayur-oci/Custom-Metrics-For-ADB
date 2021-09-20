@@ -29,7 +29,7 @@ This tutorial will use ecommerce shopping order database schema as an example; t
    & [Dynamic Groups and Resource Principals](https://docs.oracle.com/en-us/iaas/Content/Identity/Concepts/overview.htm).
 
 ## Solution at a glance:
-![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_1_archi.png?raw=true)
+![Architecture](/images/adb_1_archi.png)
 >As shown above we will have simple PL/SQL script deployed in our ADB instance,  which is scheduled run periodically to compute, collect & post the custom metrics Oracle Cloud Monitoring Service. 
 >>Additionally, ADB Service instance can be with private or public endpoint. Irrespective of that, the communication between ADB and Oracle Cloud Monitoring Service takes place on Oracle Cloud Network which is ultra-fast and highly available. No need to set up Service Gateway.
 
@@ -58,12 +58,12 @@ This tutorial will use ecommerce shopping order database schema as an example; t
 
         `ALL {resource.type = 'autonomousdatabase', resource.id = '<OCID for your ATP instance>'}`   
 
-      ![enter image description here](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_2_dg.png?raw=true)
+      ![Dynamic Group for ADB](/images/adb_2_dg.png)
     2. Create OCI IAM policy to authorize the dynamic group ***adb_dg*** , to post metrics to *Oracle Cloud Monitoring Service* with policy named `adb_dg_policy`, with policy rules as </br>
     `Allow dynamic-group adb_dg to read metrics in compartment <Your ADB Compartment OCID>`
     </br> Same is shown as below.
 
-    ![width="80%"](https://github.com/mayur-oci/adb_custom_metrics/blob/main/images/adb_3_policy.png?raw=true)
+    ![width="80%"](/images/adb_3_policy.png)
 
     Now your ATP Service(covered by definition of your dynamic group `adb_dg`) is authorized to post metrics in the same compartment!
     >But no ATP DB user is yet authorized to publish metrics to *Oracle Cloud Monitoring Service*. Hence, effectively PL/SQL running on ATP can not still post any metrics to *Oracle Cloud Monitoring Service*. We will fix that in the steps, specifically 3.iii.
